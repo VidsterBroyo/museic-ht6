@@ -5,32 +5,20 @@
  * stays dumb: it just tags each reading with the current song second and
  * batches it to the backend -- NO arousal/valence math happens on-device.
  *
- * ============================================================================
- * PLACEHOLDER -- REAL PRESAGE SDK WIRING NEEDED (see SETUP.md §b)
- * ============================================================================
- * Presage ships a Node.js/Electron SDK (Node 18+, Electron 28+) but the
- * package is distributed through their developer portal
- * (https://physiology.presagetech.com) rather than the public npm index, so
- * it cannot be pre-wired here. To integrate:
- *
- *   1. Get an API key + the Node/Electron SDK install instructions from the
- *      Presage developer portal (support@presagetech.com if unclear).
- *      NOTE: confirm macOS support for the Node/Electron SDK directly with
- *      Presage -- their C++ SDK documents macOS explicitly, the Electron
- *      wrapper does not as clearly.
- *   2. `npm install <presage-package>` in app/, then set PRESAGE_SDK_MODULE
- *      to the package name in the repo-root .env.
- *   3. Implement `startRealCapture` below: start continuous capture with
- *      PRESAGE_API_KEY, subscribe to core metrics (pulse rate, HRV Mean
- *      NN/RMSSD/SDNN, Baevsky stress index) and face analysis (expression
- *      classification + confidences, landmarks), then map each ~1 Hz payload
- *      into a SensorReading and call `emit`.
- *
- * Until then: if the module can't be loaded, the adapter falls back to a
- * clearly-labelled SIMULATION so the full pipeline (batching -> §5 derivation
- * -> graphs -> profile -> recommendations) can be built and demoed end-to-end.
- * ============================================================================
+ * Real SmartSpectra SDK wiring. If PRESAGE_API_KEY is missing or the native
+ * runtime cannot start, the adapter falls back to clearly-labelled simulation
+ * so the rest of the demo stays usable.
  */
+
+import type { SmartSpectraSDK } from "@smartspectra/node-sdk";
+
+interface SmartSpectraModule {
+  SmartSpectraSDK: typeof SmartSpectraSDK;
+  breathingMetrics: number[];
+  cardioMetrics: number[];
+  faceMetrics: number[];
+  micromotionMetrics: number[];
+}
 
 export interface SensorReading {
   raw: {
@@ -48,30 +36,19 @@ export interface SensorReading {
 type Emit = (reading: SensorReading) => void;
 
 let timer: ReturnType<typeof setInterval> | null = null;
-let realStop: (() => void) | null = null;
+let sdkInstance: SmartSpectraSDK | null = null;
 
 export function isRunning(): boolean {
-  return timer !== null || realStop !== null;
+  return timer !== null || sdkInstance !== null;
 }
 
 export function startCapture(emit: Emit): { mode: "presage" | "simulated" } {
   stopCapture();
-  const moduleName = process.env.PRESAGE_SDK_MODULE;
-  if (moduleName) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const sdk = require(moduleName);
-      realStop = startRealCapture(sdk, emit);
-      return { mode: "presage" };
-    } catch (err) {
-      console.error(
-        `Failed to load Presage SDK module "${moduleName}" -- falling back to simulation.`,
-        err,
-      );
-    }
+  if (process.env.PRESAGE_API_KEY) {
+    return startRealCapture(emit);
   } else {
     console.warn(
-      "PRESAGE_SDK_MODULE not set -- using SIMULATED sensor data (see SETUP.md).",
+      "PRESAGE_API_KEY not set -- using SIMULATED sensor data (see SETUP.md).",
     );
   }
   startSimulation(emit);
@@ -83,25 +60,177 @@ export function stopCapture(): void {
     clearInterval(timer);
     timer = null;
   }
-  if (realStop) {
-    realStop();
-    realStop = null;
+  if (sdkInstance) {
+    const sdk = sdkInstance;
+    sdkInstance = null;
+    sdk.stop();
+    void sdk.destroy().catch((err) => console.error("Presage SDK destroy failed", err));
   }
 }
 
 // ---------------------------------------------------------------------------
-// Real SDK integration point (see PLACEHOLDER block above).
+// Real SDK integration.
 // ---------------------------------------------------------------------------
-function startRealCapture(_sdk: unknown, _emit: Emit): () => void {
-  // TODO(you): start continuous capture with process.env.PRESAGE_API_KEY,
-  // subscribe to core metrics + face analysis callbacks, map payloads into
-  // SensorReading ({...raw fields..., movement_intensity}) and call _emit
-  // roughly once per second. movement_intensity should come from frame-to-
-  // frame face-landmark displacement (normalised 0..1) until/unless the SDK
-  // exposes a better motion metric.
-  throw new Error(
-    "Presage SDK loaded but startRealCapture() is not implemented yet -- see app/electron/presage.ts",
-  );
+function startRealCapture(emit: Emit): { mode: "presage" | "simulated" } {
+  try {
+    const {
+      SmartSpectraSDK,
+      breathingMetrics,
+      cardioMetrics,
+      faceMetrics,
+      micromotionMetrics,
+    } = require("@smartspectra/node-sdk") as SmartSpectraModule;
+    const { decodeMetrics } = require("@smartspectra/node-sdk/messages") as {
+      decodeMetrics: (buf: Uint8Array | ArrayBuffer) => unknown;
+    };
+
+    const sdk = new SmartSpectraSDK({
+      apiKey: process.env.PRESAGE_API_KEY,
+      requestedMetrics: [
+        ...breathingMetrics,
+        ...cardioMetrics,
+        ...faceMetrics,
+        ...micromotionMetrics,
+      ],
+    });
+
+    sdk.on("metrics", (buf) => {
+      try {
+        const metrics = decodeMetrics(buf);
+        emit(readingFromMetrics(metrics));
+      } catch (err) {
+        console.error("Failed to decode Presage metrics", err);
+      }
+    });
+    sdk.on("validationStatus", (code, _ts, hint) => {
+      if (code !== 0) console.warn("Presage validation:", code, hint);
+    });
+    sdk.on("error", (code, message, retryable) => {
+      console.error("Presage SDK error", code, message, "retryable=", retryable);
+    });
+
+    sdk.useCamera({
+      deviceIndex: Number(process.env.PRESAGE_CAMERA_INDEX ?? 0),
+      width: Number(process.env.PRESAGE_CAMERA_WIDTH ?? 1280),
+      height: Number(process.env.PRESAGE_CAMERA_HEIGHT ?? 720),
+      fps: Number(process.env.PRESAGE_CAMERA_FPS ?? 30),
+    });
+    sdk.start();
+    sdkInstance = sdk;
+    return { mode: "presage" };
+  } catch (err) {
+    console.error("Failed to start Presage SDK -- falling back to simulation.", err);
+    startSimulation(emit);
+    return { mode: "simulated" };
+  }
+}
+
+function readingFromMetrics(metrics: unknown): SensorReading {
+  const m = metrics as {
+    cardio?: {
+      pulseRate?: MetricValue[];
+      hrv?: HrvValue[];
+    } | null;
+    face?: {
+      expression?: ExpressionValue[];
+    } | null;
+    micromotion?: {
+      glutes?: MetricValue[];
+      knees?: MetricValue[];
+    } | null;
+  };
+  const pulse = latest(m.cardio?.pulseRate);
+  const hrv = latest(m.cardio?.hrv);
+  const expression = latest(m.face?.expression);
+  const topExpression = pickTopExpression(expression?.scores);
+  const movement = deriveMovementIntensity(m.micromotion);
+
+  return {
+    raw: {
+      hr_bpm: numberOrNull(pulse?.value),
+      hrv_rmssd: numberOrNull(hrv?.rmssd),
+      stress_index: numberOrNull(hrv?.baevsky),
+      expression: topExpression?.name ?? null,
+      expression_confidence: topExpression ? topExpression.confidence / 100 : null,
+      alpha_beta_ratio: null,
+    },
+    movement_intensity: movement,
+    simulated: false,
+  };
+}
+
+interface MetricValue {
+  value?: number | null;
+}
+
+interface HrvValue {
+  rmssd?: number | null;
+  baevsky?: number | null;
+}
+
+interface ExpressionValue {
+  scores?: ExpressionScore[];
+}
+
+interface ExpressionScore {
+  type?: number | null;
+  confidence?: number | null;
+}
+
+function latest<T>(values: T[] | null | undefined): T | null {
+  return values && values.length > 0 ? values[values.length - 1] : null;
+}
+
+function numberOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function deriveMovementIntensity(
+  micromotion: { glutes?: MetricValue[]; knees?: MetricValue[] } | null | undefined,
+): number | null {
+  const values = [latest(micromotion?.glutes)?.value, latest(micromotion?.knees)?.value]
+    .map(numberOrNull)
+    .filter((v): v is number => v !== null);
+  if (values.length === 0) return null;
+  const mean = values.reduce((sum, v) => sum + Math.abs(v), 0) / values.length;
+  return Math.round(Math.max(0, Math.min(1, mean)) * 100) / 100;
+}
+
+function pickTopExpression(scores: ExpressionScore[] | null | undefined): {
+  name: string;
+  confidence: number;
+} | null {
+  if (!scores || scores.length === 0) return null;
+  const top = scores.reduce((best, score) => {
+    const confidence = numberOrNull(score.confidence) ?? -1;
+    return confidence > ((numberOrNull(best.confidence) ?? -1)) ? score : best;
+  }, scores[0]);
+  const confidence = numberOrNull(top.confidence);
+  if (confidence === null || confidence < 0) return null;
+  return { name: expressionName(top.type), confidence };
+}
+
+function expressionName(type: number | null | undefined): string {
+  switch (type) {
+    case 1:
+      return "anger";
+    case 2:
+      return "contempt";
+    case 3:
+      return "disgust";
+    case 4:
+      return "fear";
+    case 5:
+      return "happy";
+    case 6:
+      return "neutral";
+    case 7:
+      return "sad";
+    case 8:
+      return "surprise";
+    default:
+      return "neutral";
+  }
 }
 
 // ---------------------------------------------------------------------------

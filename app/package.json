@@ -15,6 +15,7 @@
     "package:mac": "npm run build:electron && npm run build:renderer && electron-builder --mac"
   },
   "dependencies": {
+    "@smartspectra/node-sdk": "^3.2.1",
     "dotenv": "^16.4.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -49,15 +50,35 @@
         ]
       }
     ],
-    "win": {
-      "target": "nsis"
-    },
     "mac": {
+      "extraResources": [
+        {
+          "from": "node_modules/@smartspectra/node-sdk-darwin-${arch}/",
+          "to": "smartspectra/"
+        }
+      ],
       "category": "public.app-category.music",
       "extendInfo": {
         "NSCameraUsageDescription": "Museic uses your camera (via Presage SmartSpectra) to measure your physiological reaction to music. Without this permission, reaction capture silently fails.",
         "NSMicrophoneUsageDescription": "Some camera pipelines request microphone access; Museic does not record audio."
       }
+    },
+    "win": {
+      "target": "nsis",
+      "extraResources": [
+        {
+          "from": "node_modules/@smartspectra/node-sdk-win32-${arch}/",
+          "to": "smartspectra/"
+        }
+      ]
+    },
+    "linux": {
+      "extraResources": [
+        {
+          "from": "node_modules/@smartspectra/node-sdk-linux-${arch}/",
+          "to": "smartspectra/"
+        }
+      ]
     }
   }
 }
