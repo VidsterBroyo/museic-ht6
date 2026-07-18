@@ -19,7 +19,6 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>({ name: "feed" });
-  const [copied, setCopied] = useState(false);
 
   const refreshSession = useCallback(async () => {
     setSession(await window.museic.getSession());
@@ -58,15 +57,6 @@ export default function App() {
     );
   }
 
-  const copyToken = async () => {
-    const s = await window.museic.getSession();
-    if (s) {
-      await navigator.clipboard.writeText(s.accessToken);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
-  };
-
   return (
     <div className="app">
       <header className="topbar">
@@ -102,9 +92,6 @@ export default function App() {
         <div className="user-box">
           <MuseControl />
           <span className="muted small">{session.user?.name ?? session.user?.sub}</span>
-          <button onClick={() => void copyToken()} title="Your Auth0 token — only needed to run the Muse service manually with --token">
-            {copied ? "Copied!" : "Copy API token"}
-          </button>
           <button onClick={() => void window.museic.logout()}>Log out</button>
         </div>
       </header>
