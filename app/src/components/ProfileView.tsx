@@ -13,6 +13,11 @@ export default function ProfileView({ userId }: { userId: string }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recs, setRecs] = useState<Recommendation[] | null>(null);
+  const [mlInfo, setMlInfo] = useState<{
+    active: boolean;
+    training_rows: number;
+    min_training_rows: number;
+  } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState<string | null>(null);
 
@@ -24,11 +29,15 @@ export default function ProfileView({ userId }: { userId: string }) {
 
   const loadRecs = async () => {
     try {
-      const r = await api<{ recommendations: Recommendation[] }>(
+      const r = await api<{
+        recommendations: Recommendation[];
+        ml?: { active: boolean; training_rows: number; min_training_rows: number };
+      }>(
         `/recommendations/${encodeURIComponent(userId)}`,
         { method: "POST", body: {} },
       );
       setRecs(r.recommendations);
+      setMlInfo(r.ml ?? null);
     } catch (e) {
       setError(String(e));
     }
@@ -136,12 +145,21 @@ export default function ProfileView({ userId }: { userId: string }) {
       {recs && (
         <>
           <h3>Recommended from the library</h3>
+          {mlInfo && (
+            <p className="muted small">
+              ML predictor {mlInfo.active ? "active" : "warming up"} · {mlInfo.training_rows}/
+              {mlInfo.min_training_rows} training moments
+            </p>
+          )}
           {recs.length === 0 && <p className="muted">Nothing new to recommend yet.</p>}
           <ol>
             {recs.map((r) => (
               <li key={r.song_id}>
                 {r.title} {r.artist ? <span className="muted">— {r.artist}</span> : null}{" "}
                 <span className="tag">{(r.score * 100).toFixed(0)}</span>
+                {r.ml_score != null && (
+                  <span className="muted small"> predicted arousal {(r.ml_score * 100).toFixed(0)}%</span>
+                )}
               </li>
             ))}
           </ol>
