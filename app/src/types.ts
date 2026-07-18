@@ -74,6 +74,8 @@ export interface Recommendation {
   title: string;
   artist: string;
   score: number;
+  similarity_score?: number;
+  ml_score?: number | null;
   spotify_uri: string | null;
 }
 

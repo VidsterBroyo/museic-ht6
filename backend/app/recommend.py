@@ -1,19 +1,20 @@
-"""Recommendations (RFC §6): content-based cosine similarity between the
-user's `profiles` taste vector and each song's aggregate feature vector.
+"""Recommendations (RFC §6): content similarity plus optional trained ML.
 
-Deliberately NOT a trained model -- at a ~50-track catalog, content-based
-similarity is the correct engineering choice, not just the faster one.
-Songs already reacted to are excluded (returned separately as `already_heard`).
+The stable base score is cosine similarity between the user's `profiles` taste
+vector and each song's aggregate feature vector. Once enough reactions exist,
+we also train a tiny per-user ridge model to predict arousal from song features
+and blend that score in.
 """
 from __future__ import annotations
 
 import math
 from typing import Any
 
-from . import db
+from . import db, ml_model
 from .profiles import NUMERIC_KEYS, song_tags
 
 TAG_TERM_WEIGHT = 0.25  # llm_tags overlap layered on top of the numeric cosine
+ML_TERM_WEIGHT = 0.35
 
 
 def song_aggregate_vector(song: dict[str, Any]) -> dict[str, float] | None:
@@ -61,6 +62,7 @@ def recommend(
     heard_ids = db.reactions.distinct("meta.song_id", {"meta.user_id": user_id})
     taste = profile["vector"]
     profile_tags = profile.get("tags") or {}
+    arousal_model = ml_model.train_user_arousal_model(user_id)
 
     fresh: list[dict[str, Any]] = []
     heard: list[dict[str, Any]] = []
@@ -72,12 +74,21 @@ def recommend(
             tags = set(song_tags(song))
             if not tags.intersection({g.lower() for g in genre_filter}):
                 continue
-        score = cosine(taste, vec) + TAG_TERM_WEIGHT * tag_affinity(profile_tags, song)
+        similarity_score = cosine(taste, vec)
+        tag_score = tag_affinity(profile_tags, song)
+        ml_score = (
+            ml_model.predict_song_arousal(arousal_model, song) if arousal_model else None
+        )
+        score = similarity_score + TAG_TERM_WEIGHT * tag_score
+        if ml_score is not None:
+            score += ML_TERM_WEIGHT * ml_score
         entry = {
             "song_id": song["_id"],
             "title": song.get("title"),
             "artist": song.get("artist"),
             "score": round(score, 4),
+            "similarity_score": round(similarity_score, 4),
+            "ml_score": ml_score,
             "spotify_uri": song.get("spotify_uri"),
             "llm_tags": song.get("llm_tags"),
         }
@@ -88,4 +99,9 @@ def recommend(
     return {
         "recommendations": fresh[:limit],
         "already_heard": heard[:limit],  # "you'd probably still like this" path
+        "ml": {
+            "active": arousal_model is not None,
+            "training_rows": arousal_model.n_rows if arousal_model else 0,
+            "min_training_rows": ml_model.MIN_TRAINING_ROWS,
+        },
     }

@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import backboard, db, recommend, signals, spotify
+from . import backboard, db, ml_model, recommend, signals, spotify
 from .auth import current_user_id, raw_access_token, user_id_header_or_query
 from .profiles import rebuild_profile
 
@@ -258,6 +258,17 @@ def recommendations(
 ) -> dict[str, Any]:
     opts = options or RecommendationOptions()
     return recommend.recommend(user_id, genre_filter=opts.genres, limit=opts.limit)
+
+
+@app.get("/ml/status/{user_id}")
+def ml_status(user_id: str, _caller: str = Depends(current_user_id)) -> dict[str, Any]:
+    model = ml_model.train_user_arousal_model(user_id)
+    return {
+        "active": model is not None,
+        "training_rows": model.n_rows if model else 0,
+        "min_training_rows": ml_model.MIN_TRAINING_ROWS,
+        "kind": "per-user ridge regression: song features -> arousal",
+    }
 
 
 # ---------------------------------------------------------------------------
