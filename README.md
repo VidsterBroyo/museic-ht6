@@ -1,4 +1,15 @@
-# Museic
+<div align="center">
+  <img src="public/tree-favicon.svg" width="200" />
+</div>
+
+<h1 align = "center">
+    Museic
+</h1>
+
+<div align = "center"> A ... </div>
+
+<br>
+<br>
 
 Scroll a feed of songs, capture biometric reactions (camera via Presage SmartSpectra + optional
 Muse 2 EEG), derive per-second arousal/valence, build a music enjoyment profile, get
