@@ -206,13 +206,13 @@ export async function getAccessToken(): Promise<string | null> {
 
 /** Display-only claims from the id_token (sub, name, email). Not verified
  * here -- the backend independently validates every JWT it receives. */
-export function getUserClaims(): { sub: string; name?: string; email?: string } | null {
+export function getUserClaims(): { sub: string; name?: string; email?: string; picture?: string } | null {
   const tokens = loadTokens();
   if (!tokens?.id_token) return null;
   try {
     const payload = tokens.id_token.split(".")[1];
     const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return { sub: claims.sub, name: claims.name, email: claims.email };
+    return { sub: claims.sub, name: claims.name, email: claims.email, picture: claims.picture };
   } catch {
     return null;
   }

@@ -13,7 +13,7 @@ export interface SensorReading {
 
 export interface Session {
   accessToken: string;
-  user: { sub: string; name?: string; email?: string } | null;
+  user: { sub: string; name?: string; email?: string; picture?: string } | null;
 }
 
 /** A Presage capture-quality hint (e.g. "No face found."). code 0 means OK. */
@@ -77,6 +77,8 @@ export interface Profile {
   taste_vector: Record<string, number> | null;
   top_tags: Record<string, number>;
   quadrant_counts: Record<string, number>;
+  mean_arousal: number | null;
+  mean_valence: number | null;
   n_moments: number;
   arousal_peaks: {
     song_id: string;

@@ -69,13 +69,18 @@ def rebuild_profile(user_id: str) -> dict[str, Any]:
             "vector": None,
             "tags": {},
             "quadrant_counts": {},
+            "mean_arousal": None,
+            "mean_valence": None,
             "n_moments": 0,
             "updated_at": datetime.now(timezone.utc),
         }
-        db.profiles.replace_one({"user_id": user_id}, profile, upsert=True)
+        # $set (not replace) so cached narrative / peaks / refreshed_at survive.
+        db.profiles.update_one({"user_id": user_id}, {"$set": profile}, upsert=True)
         return profile
 
     mean_arousal = sum(r["arousal"] for r in rows) / len(rows)
+    valence_rows = [r["valence"] for r in rows if r.get("valence") is not None]
+    mean_valence = (sum(valence_rows) / len(valence_rows)) if valence_rows else 0.0
 
     song_cache: dict[str, dict[str, Any] | None] = {}
     acc = {k: 0.0 for k in NUMERIC_KEYS}
@@ -131,8 +136,10 @@ def rebuild_profile(user_id: str) -> dict[str, Any]:
         "tags": top_tags,
         "quadrant_counts": quadrant_counts,
         "mean_arousal": round(mean_arousal, 4),
+        "mean_valence": round(mean_valence, 4),
         "n_moments": n_moments,
         "updated_at": datetime.now(timezone.utc),
     }
-    db.profiles.replace_one({"user_id": user_id}, profile, upsert=True)
+    # $set (not replace) so cached narrative / peaks / refreshed_at survive.
+    db.profiles.update_one({"user_id": user_id}, {"$set": profile}, upsert=True)
     return profile

@@ -19,6 +19,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>({ name: "feed" });
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const refreshSession = useCallback(async () => {
     setSession(await window.museic.getSession());
@@ -32,6 +33,13 @@ export default function App() {
     })();
     return window.museic.onAuthChanged(() => void refreshSession());
   }, [refreshSession]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuOpen]);
 
   if (!ready) return <div className="center-page">loading…</div>;
 
@@ -91,8 +99,27 @@ export default function App() {
         </nav>
         <div className="user-box">
           <MuseControl />
-          <span className="muted small">{session.user?.name ?? session.user?.sub}</span>
-          <button onClick={() => void window.museic.logout()}>Log out</button>
+          <div className="user-menu" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="avatar-btn"
+              title={session.user?.name ?? session.user?.sub}
+              aria-label="Account menu"
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              {session.user?.picture ? (
+                <img className="avatar" src={session.user.picture} alt="" />
+              ) : (
+                <span className="avatar avatar-fallback">
+                  {(session.user?.name ?? session.user?.sub ?? "?").charAt(0).toUpperCase()}
+                </span>
+              )}
+            </button>
+            {menuOpen && (
+              <div className="user-dropdown">
+                <button onClick={() => void window.museic.logout()}>Log out</button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
       <main>

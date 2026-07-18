@@ -25,4 +25,9 @@ BACKBOARD_ASSISTANT_ID = os.getenv("BACKBOARD_ASSISTANT_ID", "")
 BACKBOARD_GEMINI_MODEL = os.getenv("BACKBOARD_GEMINI_MODEL", "gemini-2.0-flash")
 BACKBOARD_BASE_URL = "https://app.backboard.io/api"
 
+# How long a served profile (taste vector recompute + Backboard narrative) is
+# considered fresh. Repeat GET /profile within this window serves the stored
+# document instead of recomputing / re-calling Backboard. Default: 1 hour.
+PROFILE_REFRESH_TTL_SECONDS = int(os.getenv("PROFILE_REFRESH_TTL_SECONDS", "3600"))
+
 AUDIO_DIR = Path(os.getenv("AUDIO_DIR", str(_REPO_ROOT / "library"))).resolve()

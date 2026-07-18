@@ -34,6 +34,25 @@ main { flex: 1; overflow-y: auto; }
 }
 .topbar nav { display: flex; gap: 6px; flex: 1; }
 .user-box { display: flex; align-items: center; gap: 8px; }
+.user-menu { position: relative; }
+.avatar-btn { padding: 0; border: none; background: none; border-radius: 50%; line-height: 0; }
+.avatar-btn:hover { background: none; }
+.avatar {
+  width: 34px; height: 34px; border-radius: 50%; display: block;
+  object-fit: cover; border: 1px solid var(--border);
+}
+.avatar-fallback {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #14141c; font-weight: 700; font-size: 0.95rem;
+}
+.avatar-btn:hover .avatar { border-color: var(--accent); }
+.user-dropdown {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px; min-width: 140px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.user-dropdown button { width: 100%; text-align: left; border: none; background: none; }
+.user-dropdown button:hover { background: #2c2c3c; }
 
 button {
   background: #232330; color: var(--text); border: 1px solid var(--border);
@@ -99,11 +118,55 @@ code { background: #1d1d27; padding: 1px 6px; border-radius: 4px; font-size: 0.8
   border-left: 3px solid var(--accent); margin: 16px 0; padding: 10px 16px;
   background: var(--panel); border-radius: 0 10px 10px 0; font-style: italic; line-height: 1.5;
 }
-.quadrants { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 18px; max-width: 460px; }
-.quadrant { display: grid; grid-template-columns: 90px 1fr 44px; align-items: center; gap: 10px; }
-.bar { background: #1d1d27; border-radius: 6px; height: 10px; overflow: hidden; }
-.bar .fill { background: var(--accent); height: 100%; }
 .peaks { line-height: 1.8; }
+
+/* Emotion-quadrant scatter, political-compass style: a square grid with the
+   two axes drawn through the centre (arrows at each end) and one white label
+   centred on each of the four axis ends. No numeric ticks. */
+.quadrant-plot { max-width: 520px; margin-left: auto; margin-right: auto; }
+.quadrant-frame { position: relative; width: 100%; padding: 26px; }
+.quadrant-grid { position: relative; width: 100%; aspect-ratio: 1 / 1; }
+
+.q-axis-label {
+  position: absolute; color: #fff; font-size: 0.82rem; font-weight: 600;
+  white-space: nowrap; pointer-events: none;
+}
+.q-top { top: 2px; left: 50%; transform: translateX(-50%); }
+.q-bottom { bottom: 2px; left: 50%; transform: translateX(-50%); }
+.q-left {
+  left: 2px; top: 50%; writing-mode: vertical-rl;
+  transform: translateY(-50%) rotate(180deg); transform-origin: center;
+}
+.q-right {
+  right: 2px; top: 50%; writing-mode: vertical-rl;
+  transform: translateY(-50%); transform-origin: center;
+}
+
+/* Centre crosshair axes drawn over the grid */
+.q-axis { position: absolute; background: #e6e6f0; pointer-events: none; }
+.q-axis-x { left: 0; right: 0; top: 50%; height: 2px; transform: translateY(-50%); }
+.q-axis-y { top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-50%); }
+.q-axis::before, .q-axis::after { content: ""; position: absolute; width: 0; height: 0; }
+.q-axis-x::before {
+  left: -1px; top: 50%; transform: translateY(-50%);
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+  border-right: 8px solid #e6e6f0;
+}
+.q-axis-x::after {
+  right: -1px; top: 50%; transform: translateY(-50%);
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+  border-left: 8px solid #e6e6f0;
+}
+.q-axis-y::before {
+  top: -1px; left: 50%; transform: translateX(-50%);
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-bottom: 8px solid #e6e6f0;
+}
+.q-axis-y::after {
+  bottom: -1px; left: 50%; transform: translateX(-50%);
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 8px solid #e6e6f0;
+}
 .compat-score { margin: 18px 0; }
 .big-number { font-size: 3rem; font-weight: 800; color: var(--accent); }
 
