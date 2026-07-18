@@ -239,7 +239,7 @@ def main() -> int:
         return 1
 
     gemini_key = os.getenv("GEMINI_API_KEY", "")
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     if not args.skip_gemini and not gemini_key:
         print("GEMINI_API_KEY not set -- running numeric pass only (use --skip-gemini "
               "to silence this).")
