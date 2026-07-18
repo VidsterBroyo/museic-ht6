@@ -1,0 +1,22 @@
+# Secrets
+.env
+*.env.local
+
+# Node
+node_modules/
+app/dist/
+app/dist-electron/
+app/release/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tooling
+*.log

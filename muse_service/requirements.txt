@@ -1,0 +1,6 @@
+muselsl>=2.2
+pylsl>=1.16
+scipy>=1.11
+numpy>=1.26
+requests>=2.32
+python-dotenv>=1.0

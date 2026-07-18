@@ -1,0 +1,63 @@
+{
+  "name": "museic-app",
+  "version": "0.1.0",
+  "description": "Museic desktop app (Electron): feed UI + Presage capture + Auth0 native login",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"npm run dev:electron\"",
+    "dev:electron": "tsc -p tsconfig.electron.json && wait-on tcp:127.0.0.1:5173 && electron .",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "package": "npm run build:electron && npm run build:renderer && electron-builder",
+    "package:win": "npm run build:electron && npm run build:renderer && electron-builder --win",
+    "package:mac": "npm run build:electron && npm run build:renderer && electron-builder --mac"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "dev.museic.app",
+    "productName": "Museic",
+    "files": [
+      "dist/**",
+      "dist-electron/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "protocols": [
+      {
+        "name": "Museic auth callback",
+        "schemes": [
+          "museic"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Museic uses your camera (via Presage SmartSpectra) to measure your physiological reaction to music. Without this permission, reaction capture silently fails.",
+        "NSMicrophoneUsageDescription": "Some camera pipelines request microphone access; Museic does not record audio."
+      }
+    }
+  }
+}
