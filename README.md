@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="public/tree-favicon.svg" width="200" />
+  <img src="" width="200" />
 </div>
 
 <h1 align = "center">
