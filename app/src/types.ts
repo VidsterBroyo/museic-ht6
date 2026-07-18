@@ -22,6 +22,20 @@ export interface ValidationStatus {
   hint: string;
 }
 
+export type MuseStatus =
+  | { state: "stopped" }
+  | { state: "starting" }
+  | { state: "connecting" }
+  | {
+      state: "streaming";
+      simulated?: boolean;
+      preview?: boolean;
+      lastRatio?: number | null;
+      bands?: Record<string, number> | null;
+      posted?: number;
+    }
+  | { state: "error"; message: string };
+
 export interface Song {
   song_id: string;
   title: string;
@@ -38,6 +52,7 @@ export interface GraphPoint {
   arousal: number | null;
   valence: number | null;
   quadrant: string | null;
+  muse: number | null;
   energy: number | null;
   brightness: number | null;
   onset_density: number | null;
@@ -112,11 +127,15 @@ declare global {
       logout: () => Promise<void>;
       getSession: () => Promise<Session | null>;
       onAuthChanged: (cb: () => void) => () => void;
-      startCapture: () => Promise<{ mode: "presage" | "simulated" }>;
+      startCapture: (opts?: { simulate?: boolean }) => Promise<{ mode: "presage" | "simulated" }>;
       stopCapture: () => Promise<void>;
       onSensorReading: (cb: (reading: SensorReading) => void) => () => void;
       onValidation: (cb: (status: ValidationStatus) => void) => () => void;
       setNowPlaying: (songId: string | null) => Promise<void>;
+      startMuse: (opts?: { address?: string; simulate?: boolean }) => Promise<MuseStatus>;
+      stopMuse: () => Promise<void>;
+      getMuseStatus: () => Promise<MuseStatus>;
+      onMuseStatus: (cb: (status: MuseStatus) => void) => () => void;
       getConfig: () => Promise<{ backendUrl: string }>;
     };
   }

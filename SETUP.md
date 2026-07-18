@@ -77,8 +77,10 @@ Auth0 owns the Spotify OAuth exchange — there is deliberately **no Spotify OAu
    tracks you care about in the demo.
 4. **`BACKBOARD_ASSISTANT_ID`** — created on first profile view; paste the logged id into `.env`
    (see section a.4).
-5. **`MUSE_USER_TOKEN`** — per-session user JWT for the Muse companion service. Log into the app →
-   top bar → **Copy API token** → paste into `.env` (tokens expire; re-copy each session).
+5. **Muse token** — no setup needed. Clicking **Connect Muse** in the app injects your Auth0
+   token automatically, and preview mode (not logged in) needs none. Only if you run the service
+   manually AND want readings saved do you pass `--token <JWT>` (app top bar → **Copy API token**;
+   the token expires, so re-copy each session).
 6. **Song sections are heuristic** (energy-based high/low segmentation in
    `scripts/extract_features.py:heuristic_sections`) — hand-edit the `sections` array in Mongo
    for demo tracks if you want accurate "peaked during the drop" labels.
@@ -146,10 +148,11 @@ Bluetooth support (webcam passthrough is similarly unreliable); the backend and 
 script are fine in WSL, the two hardware-touching pieces are not.
 
 ```
-# venv active, Muse 2 powered on, MUSE_USER_TOKEN set in .env
-python muse_service/muse_service.py
-# no hardware handy? end-to-end test with:
-python muse_service/muse_service.py --simulate
+# Easiest: just click "Connect Muse" in the app (no token, no terminal needed).
+# Manual, venv active, Muse 2 powered on:
+python muse_service/muse_service.py                 # preview: live signal, nothing saved
+python muse_service/muse_service.py --token <JWT>   # persist readings for your user
+# no hardware handy? add --simulate for synthetic band power
 ```
 
 The app writes the currently-playing song to a temp file the service follows automatically.

@@ -105,3 +105,120 @@ code { background: #1d1d27; padding: 1px 6px; border-radius: 4px; font-size: 0.8
 .peaks { line-height: 1.8; }
 .compat-score { margin: 18px 0; }
 .big-number { font-size: 3rem; font-weight: 800; color: var(--accent); }
+
+/* Muse companion control in the top bar */
+.muse-pill { display: inline-flex; align-items: center; gap: 6px; }
+.muse-pill .muse-toggle { padding: 4px 10px; }
+.muse-pill .muse-state { color: var(--muted); min-width: 0; }
+.muse-pill.muse-streaming .muse-state { color: #7ce7a2; }
+.muse-pill.muse-streaming .muse-toggle { border-color: #2e6b45; color: #7ce7a2; }
+.muse-pill.muse-connecting .muse-state,
+.muse-pill.muse-starting .muse-state { color: #ffd166; }
+.muse-pill.muse-error .muse-state { color: var(--accent); }
+.muse-pill.muse-error .muse-toggle { border-color: var(--accent); }
+.muse-sim { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); cursor: pointer; }
+.muse-sim input { accent-color: var(--accent); }
+.prelogin-muse { margin-top: 26px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+/* ---------------------------------------------------------------------------
+   Song graph — validated categorical palette (CVD-checked on the dark surface).
+   Series colours are roles so light/dark + theming swap in one place.
+--------------------------------------------------------------------------- */
+.song-graph {
+  --series-arousal: #d55181;   /* magenta  (slot 3) — fused arousal, headline */
+  --series-muse:    #9085e9;   /* violet   (slot 7) — EEG band power */
+  --series-valence: #3987e5;   /* blue     (slot 1) — expression valence */
+  --music-energy:   #8f8f9d;   /* recessive context */
+  --music-onset:    #5f5f6b;
+  --grid:        #23232e;
+  --axis:        #33333f;
+  --axis-text:   #8f8f9d;
+  --zero-line:   #43434f;
+  --cursor:      #55555f;
+  --section-fill: rgba(255, 255, 255, 0.04);
+}
+.song-graph .ghost {
+  background: transparent; border-color: transparent; color: var(--muted); padding-left: 0;
+}
+.song-graph .ghost:hover { color: var(--text); }
+.graph-head { margin: 6px 0 14px; }
+.graph-head h2 { margin: 0; line-height: 1.1; }
+.graph-head .muted { margin: 2px 0 0; }
+.graph-meta { margin-top: 6px; }
+.graph-caption { margin-top: 12px; max-width: 620px; line-height: 1.5; }
+
+/* Grouped legend under the plot */
+.graph-legend {
+  display: flex; flex-wrap: wrap; gap: 8px 26px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.legend-group { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.legend-title {
+  font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text); }
+.legend-swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; flex: none; }
+
+/* Custom tooltip */
+.graph-tooltip {
+  background: #12121a; border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 10px; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45); min-width: 148px;
+}
+.graph-tooltip-t {
+  font-size: 0.72rem; color: var(--muted); margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.graph-tooltip-row { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; line-height: 1.7; }
+.graph-tooltip-label { color: var(--text); flex: 1; }
+.graph-tooltip-value { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   Signals dashboard (live metrics testing page)
+--------------------------------------------------------------------------- */
+.metrics-head { margin-bottom: 14px; }
+.metrics-head h2 { margin: 0 0 4px; }
+.metrics-head .muted { margin: 0; max-width: 640px; }
+.metrics-controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px;
+}
+.metrics-controls .spacer { flex: 1; }
+
+.chip {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  padding: 2px 9px; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em;
+  border: 1px solid var(--border); color: var(--muted); text-transform: lowercase;
+}
+.chip-ok, .chip-camera { color: #7ce7a2; border-color: #2e6b45; }
+.chip-warn { color: #ffd166; border-color: #4d3a12; }
+.chip-muse { color: #b3aef0; border-color: #3a3466; }
+
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.metric-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.metric-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.metric-label { font-weight: 600; font-size: 0.92rem; }
+.metric-value {
+  font-size: 1.7rem; font-weight: 800; line-height: 1; color: var(--text);
+  font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 6px;
+}
+.metric-value.expression-value { font-size: 1.3rem; text-transform: capitalize; }
+.metric-unit { font-size: 0.72rem; font-weight: 500; color: var(--muted); letter-spacing: 0.02em; }
+.metric-spark { height: 64px; display: flex; align-items: center; }
+.metric-empty { width: 100%; text-align: center; }
+.expression-conf { flex-direction: column; align-items: stretch; gap: 5px; justify-content: center; }
+.metric-explain { margin: 0; line-height: 1.45; }
+
+.metrics-explainer {
+  margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--border);
+}
+.metrics-explainer h3 { margin: 0 0 4px; }
+.metrics-defs { margin: 12px 0 0; padding-left: 18px; line-height: 1.7; max-width: 760px; }
+.metrics-defs li { margin-bottom: 4px; }
+.metrics-defs b { color: var(--text); }
