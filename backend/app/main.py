@@ -181,9 +181,16 @@ def _user_song_curve(user_id: str, song_id: str) -> dict[int, dict[str, Any]]:
     by_t: dict[int, dict[str, Any]] = {}
     for r in rows:
         t = int(r["t"])
-        p = by_t.setdefault(t, {"arousal_sum": 0.0, "n": 0, "valence": None, "quadrant": None})
+        p = by_t.setdefault(
+            t, {"arousal_sum": 0.0, "n": 0, "valence": None, "quadrant": None, "muse": None}
+        )
         p["arousal_sum"] += r.get("arousal") or 0.0
         p["n"] += 1
+        # Muse EEG rows carry a source-specific arousal (alpha/beta band power);
+        # surface it as its own series so the graph can show the EEG contribution
+        # distinctly from the fused arousal line.
+        if r.get("source") == "muse":
+            p["muse"] = r.get("arousal")
         # Valence comes from expression classification -> prefer presage rows.
         if r.get("source") == "presage" or p["valence"] is None:
             p["valence"] = r.get("valence")
@@ -221,6 +228,7 @@ def song_graph(
                 "arousal": round(p["arousal_sum"] / p["n"], 4) if p else None,
                 "valence": p["valence"] if p else None,
                 "quadrant": p["quadrant"] if p else None,
+                "muse": p["muse"] if p and p.get("muse") is not None else None,
                 "energy": at(energy, t),
                 "brightness": at(brightness, t),
                 "onset_density": at(onset, t),

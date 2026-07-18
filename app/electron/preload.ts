@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld("museic", {
     ipcRenderer.on("auth:changed", listener);
     return () => ipcRenderer.removeListener("auth:changed", listener);
   },
-  startCapture: () => ipcRenderer.invoke("capture:start"),
+  startCapture: (opts?: { simulate?: boolean }) => ipcRenderer.invoke("capture:start", opts),
   stopCapture: () => ipcRenderer.invoke("capture:stop"),
   onSensorReading: (cb: (reading: unknown) => void) => {
     const listener = (_e: unknown, reading: unknown) => cb(reading);
@@ -22,5 +22,14 @@ contextBridge.exposeInMainWorld("museic", {
     return () => ipcRenderer.removeListener("sensor:validation", listener as never);
   },
   setNowPlaying: (songId: string | null) => ipcRenderer.invoke("now-playing:set", songId),
+  startMuse: (opts?: { address?: string; simulate?: boolean }) =>
+    ipcRenderer.invoke("muse:start", opts),
+  stopMuse: () => ipcRenderer.invoke("muse:stop"),
+  getMuseStatus: () => ipcRenderer.invoke("muse:status"),
+  onMuseStatus: (cb: (status: unknown) => void) => {
+    const listener = (_e: unknown, status: unknown) => cb(status);
+    ipcRenderer.on("muse:status", listener);
+    return () => ipcRenderer.removeListener("muse:status", listener as never);
+  },
   getConfig: () => ipcRenderer.invoke("config:get"),
 });
