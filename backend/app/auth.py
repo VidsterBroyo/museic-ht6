@@ -31,6 +31,7 @@ def decode_token(token: str) -> dict:
             algorithms=["RS256"],
             audience=config.AUTH0_AUDIENCE,
             issuer=f"https://{config.AUTH0_DOMAIN}/",
+            leeway=120,  # absorb clock skew between this machine and Auth0 (iat/nbf/exp)
         )
     except Exception as exc:  # noqa: BLE001 - map every failure to 401
         raise HTTPException(status_code=401, detail=f"invalid token: {exc}") from exc

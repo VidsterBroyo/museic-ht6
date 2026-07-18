@@ -106,8 +106,28 @@ export async function handleCallbackUrl(url: string): Promise<boolean> {
   if (parsed.protocol !== "museic:") return false;
   const code = parsed.searchParams.get("code");
   const state = parsed.searchParams.get("state");
-  if (!code || !pending || state !== pending.state) {
-    console.warn("auth callback rejected (missing code or state mismatch)");
+  const authError = parsed.searchParams.get("error");
+  const authErrorDesc = parsed.searchParams.get("error_description");
+  if (authError) {
+    console.error("auth callback: Auth0 returned an error instead of a code:", {
+      error: authError,
+      error_description: authErrorDesc,
+    });
+    return false;
+  }
+  if (!code) {
+    console.warn("auth callback rejected: no `code` param in callback URL", url);
+    return false;
+  }
+  if (!pending) {
+    console.warn("auth callback rejected: no pending login in this process (was beginLogin() called on a different app instance?)");
+    return false;
+  }
+  if (state !== pending.state) {
+    console.warn("auth callback rejected: state mismatch", {
+      received: state,
+      expected: pending.state,
+    });
     return false;
   }
   const resp = await fetch(`https://${AUTH0_DOMAIN}/oauth/token`, {
