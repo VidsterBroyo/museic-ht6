@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Line, LineChart, ResponsiveContainer, YAxis } from "recharts";
+import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
 import MuseControl from "./MuseControl";
-import type { MuseStatus, SensorReading } from "../types";
+import type { MuseStatus, SensorReading, ValidationStatus } from "../types";
+import { EXPRESSION_VALENCE, clip01, computeEnjoyment, type EnjoyInputs } from "../enjoyment";
 
 /**
  * Live "Signals" dashboard — a viewing/testing harness that plots every raw
- * metric the sensors emit, in a rolling window, with a one-line explanation of
- * each. Two independent sources feed it:
- *   - Presage camera (rPPG + face + micromotion): heart rate, HRV, stress,
- *     facial expression, movement.
- *   - Muse 2 EEG: the alpha/beta band-power ratio (its ONLY output).
- * Arousal/valence are NOT here — they're derived server-side at ingest and shown
- * on the per-song graph; this page is the raw upstream signals.
+ * metric the sensors emit. Camera (Presage): heart rate, HRV, stress, movement,
+ * facial expression. Muse EEG: alpha/beta ratio + the five band powers.
  */
 
-const WINDOW = 120; // samples kept (~1–2 min at 1 Hz)
+const WINDOW = 240; // samples kept (~4 min at 1 Hz)
+const GAP_MS = 3000; // silence before we start inventing values for a source
 
 interface Sample {
-  t: number; // seconds since capture started
+  t: number;
   hr_bpm: number | null;
   hrv_rmssd: number | null;
   stress_index: number | null;
@@ -28,6 +25,70 @@ interface Sample {
   alpha: number | null;
   beta: number | null;
   gamma: number | null;
+  muse_movement: number | null; // head motion from the Muse IMU (accel + gyro)
+  enjoyment: number | null; // experimental fused score
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic gap-fill simulators (renderer-side). Only used when a real source has
+// gone quiet — see the gap-filler effect. Mirrors the backend's fake generators.
+// ---------------------------------------------------------------------------
+const SIM_EXPRESSIONS = ["neutral", "happy", "surprise", "sad", "fear"];
+
+interface CamSimState {
+  hr: number;
+  excitement: number; // slow latent state the fakes follow
+  expression: string;
+}
+
+function stepCameraSim(s: CamSimState): {
+  reading: Partial<Sample>;
+  expression: { label: string; conf: number };
+  valence: number;
+  movement: number;
+  hr: number;
+  next: CamSimState;
+} {
+  let excitement = s.excitement + (Math.random() - 0.48) * 0.08;
+  if (Math.random() < 0.04) excitement += 0.5; // occasional "drop hit"
+  excitement = clip01(excitement * 0.97);
+  const hr = s.hr + (65 + excitement * 25 - s.hr) * 0.08 + (Math.random() - 0.5) * 1.2;
+  let expression = s.expression;
+  if (Math.random() < 0.06 + excitement * 0.2) {
+    expression =
+      excitement > 0.55
+        ? Math.random() < 0.7 ? "happy" : "surprise"
+        : SIM_EXPRESSIONS[Math.floor(Math.random() * SIM_EXPRESSIONS.length)];
+  }
+  const conf = Math.round((0.5 + Math.random() * 0.5) * 100) / 100;
+  const movement = clip01(0.1 + excitement * 0.6 + (Math.random() - 0.5) * 0.15);
+  return {
+    reading: {
+      hr_bpm: Math.round(hr),
+      hrv_rmssd: Math.round((55 - excitement * 30 + (Math.random() - 0.5) * 6) * 10) / 10,
+      stress_index: Math.round(40 + excitement * 60 + (Math.random() - 0.5) * 8),
+      movement_intensity: movement,
+    },
+    expression: { label: expression, conf },
+    valence: (EXPRESSION_VALENCE[expression] ?? 0) * conf,
+    movement,
+    hr,
+    next: { hr, excitement, expression },
+  };
+}
+
+function stepMuseSim(): Partial<Sample> {
+  const alpha = 0.12 + Math.random() * 0.1;
+  const beta = 0.35 + Math.random() * 0.15;
+  return {
+    delta: 0.08 + Math.random() * 0.06,
+    theta: 0.05 + Math.random() * 0.05,
+    alpha,
+    beta,
+    gamma: 0.2 + Math.random() * 0.15,
+    alpha_beta_ratio: Math.round((alpha / beta) * 100) / 100,
+    muse_movement: clip01(0.1 + Math.random() * 0.3),
+  };
 }
 
 const EMPTY_MUSE = {
@@ -37,6 +98,7 @@ const EMPTY_MUSE = {
   alpha: null as number | null,
   beta: null as number | null,
   gamma: null as number | null,
+  muse_movement: null as number | null,
 };
 
 type MetricKey = keyof Omit<Sample, "t">;
@@ -53,85 +115,65 @@ interface MetricDef {
 }
 
 const METRICS: MetricDef[] = [
-  {
-    key: "hr_bpm", label: "Heart rate", unit: "bpm", source: "camera", color: "#e66767",
-    domain: [40, 160], format: (v) => `${Math.round(v)}`,
-    explain: "Beats per minute from tiny colour changes in your face (rPPG). Climbs with arousal and exertion — a slow, corroborating signal.",
-  },
-  {
-    key: "hrv_rmssd", label: "HRV (RMSSD)", unit: "ms", source: "camera", color: "#199e70",
-    domain: [0, 120], format: (v) => `${Math.round(v)}`,
-    explain: "Beat-to-beat variability. Higher = relaxed/parasympathetic; it drops as sympathetic (stress) arousal rises.",
-  },
-  {
-    key: "stress_index", label: "Stress index", unit: "Baevsky", source: "camera", color: "#c98500",
-    domain: [0, 150], format: (v) => `${Math.round(v)}`,
-    explain: "Baevsky stress index derived from HRV. ~50 is typical; 100+ indicates high sympathetic load.",
-  },
-  {
-    key: "movement_intensity", label: "Movement", unit: "0–1", source: "camera", color: "#3987e5",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
-    explain: "Micromotion magnitude — how much you're physically moving. Head-bops and fidgets during a drop spike it (fast arousal signal).",
-  },
-  {
-    key: "alpha_beta_ratio", label: "Alpha / Beta ratio", unit: "ratio · EEG", source: "muse", color: "#c98500",
-    domain: [0, 3], format: (v) => v.toFixed(2),
-    explain: "Alpha power ÷ beta power over a 3s window. Low = beta-dominant = engaged/aroused; high = alpha-dominant = relaxed. This is the ratio Museic feeds into arousal.",
-  },
-  {
-    key: "delta", label: "Delta wave", unit: "1–4 Hz · % power", source: "muse", color: "#3987e5",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
-    explain: "Slowest waves — deep dreamless sleep and unconscious processing. Dominant when very drowsy.",
-  },
-  {
-    key: "theta", label: "Theta wave", unit: "4–8 Hz · % power", source: "muse", color: "#199e70",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
-    explain: "Drowsy, meditative, daydreaming states; also tied to memory and emotional processing.",
-  },
-  {
-    key: "alpha", label: "Alpha wave", unit: "8–12 Hz · % power", source: "muse", color: "#9085e9",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
-    explain: "Relaxed but awake — calm focus, eyes-closed idling. High alpha = at ease.",
-  },
-  {
-    key: "beta", label: "Beta wave", unit: "13–30 Hz · % power", source: "muse", color: "#d55181",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
-    explain: "Alert, engaged, active concentration. Rises when you're locked in — the arousal-heavy band.",
-  },
-  {
-    key: "gamma", label: "Gamma wave", unit: "30–44 Hz · % power", source: "muse", color: "#e66767",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
-    explain: "Fastest waves — high-level perception and 'binding'. Small and noisy on consumer EEG.",
-  },
+  { key: "hr_bpm", label: "Heart rate", unit: "bpm", source: "camera", color: "#e66767",
+    domain: [40, 160], format: (v) => `${Math.round(v)}`, explain: "Pulse from facial colour (rPPG)." },
+  { key: "hrv_rmssd", label: "HRV", unit: "ms RMSSD", source: "camera", color: "#199e70",
+    domain: [0, 120], format: (v) => `${Math.round(v)}`, explain: "Beat-to-beat variability; drops with stress." },
+  { key: "stress_index", label: "Stress", unit: "Baevsky", source: "camera", color: "#c98500",
+    domain: [0, 150], format: (v) => `${Math.round(v)}`, explain: "HRV-based load. ~50 typical, 100+ high." },
+  { key: "alpha_beta_ratio", label: "Alpha / Beta ratio", unit: "ratio", source: "muse", color: "#c98500",
+    domain: [0, 3], format: (v) => v.toFixed(2), explain: "Low = engaged, high = relaxed. Feeds arousal." },
+  { key: "delta", label: "Delta", unit: "1–4 Hz", source: "muse", color: "#3987e5",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Deep sleep / very drowsy." },
+  { key: "theta", label: "Theta", unit: "4–8 Hz", source: "muse", color: "#199e70",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Drowsy, meditative, daydreaming." },
+  { key: "alpha", label: "Alpha", unit: "8–12 Hz", source: "muse", color: "#9085e9",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Relaxed but awake, calm focus." },
+  { key: "beta", label: "Beta", unit: "13–30 Hz", source: "muse", color: "#d55181",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Alert, engaged, concentrating." },
+  { key: "gamma", label: "Gamma", unit: "30–44 Hz", source: "muse", color: "#e66767",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Fast; perception. Noisy on consumer EEG." },
+  { key: "muse_movement", label: "Head movement", unit: "%", source: "muse", color: "#4bc0c0",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Head-bop / nod from the Muse accelerometer + gyroscope." },
 ];
-
-const EXPRESSIONS_INFO =
-  "Dominant facial expression + its confidence (Presage face model). This is what drives valence: happy/surprise → positive, sad/anger/fear/disgust → negative.";
 
 export default function MetricsView() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [cameraMode, setCameraMode] = useState<"presage" | "simulated" | null>(null);
   const [expression, setExpression] = useState<{ label: string; conf: number } | null>(null);
-  const [simulate, setSimulate] = useState(false);
+  const [autofill, setAutofill] = useState(true);
+  const [filling, setFilling] = useState<{ cam: boolean; muse: boolean }>({ cam: false, muse: false });
+  const [showPreview, setShowPreview] = useState(false); // opt-in webcam self-view (experimental)
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<ValidationStatus | null>(null);
 
   const startRef = useRef<number | null>(null);
-  const museLatestRef = useRef({ ...EMPTY_MUSE }); // carry EEG values across camera-only samples
+  const museLatestRef = useRef({ ...EMPTY_MUSE });
+  const enjoyRef = useRef<EnjoyInputs>({ valence: null, movement: null, ratio: null, hr: null });
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Freshness tracking for the dynamic gap-filler.
+  const lastCamRef = useRef(0);       // ms of last REAL camera reading
+  const lastMuseRef = useRef(0);      // ms of last REAL muse data
+  const cameraOnRef = useRef(false);
+  const museStateRef = useRef<MuseStatus["state"]>("stopped");
+  const camSimRef = useRef<CamSimState>({ hr: 70, excitement: 0.2, expression: "neutral" });
+  const camMoveRef = useRef<number | null>(null);  // Presage lower-body micromotion
+  const museMoveRef = useRef<number | null>(null); // Muse IMU head motion (preferred)
+  cameraOnRef.current = cameraMode !== null;
+
+  // Muse head-bop is a better "groove" signal than Presage's glutes/knees.
+  const bestMovement = () => museMoveRef.current ?? camMoveRef.current;
 
   const push = useCallback((partial: Partial<Sample>) => {
     if (startRef.current === null) startRef.current = Date.now();
     const t = Math.round(((Date.now() - startRef.current) / 1000) * 10) / 10;
+    const enjoyment = computeEnjoyment(enjoyRef.current);
     setSamples((prev) => {
       const next = [
         ...prev,
-        {
-          t,
-          hr_bpm: null,
-          hrv_rmssd: null,
-          stress_index: null,
-          movement_intensity: null,
-          ...museLatestRef.current,
-          ...partial,
-        },
+        { t, hr_bpm: null, hrv_rmssd: null, stress_index: null, movement_intensity: null, ...museLatestRef.current, ...partial, enjoyment },
       ];
       return next.length > WINDOW ? next.slice(next.length - WINDOW) : next;
     });
@@ -140,46 +182,158 @@ export default function MetricsView() {
   // Camera stream (Presage / simulation).
   useEffect(() => {
     return window.museic.onSensorReading((reading: SensorReading) => {
+      lastCamRef.current = Date.now(); // real data arrived -> no need to invent
       const r = reading.raw;
       if (r.expression) setExpression({ label: r.expression, conf: r.expression_confidence ?? 0 });
-      push({
-        hr_bpm: r.hr_bpm,
-        hrv_rmssd: r.hrv_rmssd,
-        stress_index: r.stress_index,
-        movement_intensity: reading.movement_intensity,
-      });
+      const valence = r.expression
+        ? (EXPRESSION_VALENCE[r.expression.toLowerCase()] ?? 0) * (r.expression_confidence ?? 0)
+        : enjoyRef.current.valence;
+      camMoveRef.current = reading.movement_intensity ?? camMoveRef.current;
+      enjoyRef.current = {
+        ...enjoyRef.current,
+        valence,
+        movement: bestMovement(),
+        hr: r.hr_bpm ?? enjoyRef.current.hr,
+      };
+      push({ hr_bpm: r.hr_bpm, hrv_rmssd: r.hrv_rmssd, stress_index: r.stress_index, movement_intensity: reading.movement_intensity });
     });
   }, [push]);
 
-  // Muse stream: capture the live ratio + per-band powers (MuseControl renders the toggle).
+  // Presage capture-quality / error status.
+  useEffect(() => {
+    return window.museic.onValidation((status: ValidationStatus) => setValidation(status));
+  }, []);
+
+  // Muse stream: live ratio + per-band powers.
   useEffect(() => {
     return window.museic.onMuseStatus((status: MuseStatus) => {
+      museStateRef.current = status.state;
       if (status.state !== "streaming") return;
       const upd: Partial<Sample> = {};
       if (status.lastRatio != null) upd.alpha_beta_ratio = status.lastRatio;
+      // `movement` present on a reading (number or explicit null); undefined on
+      // posted/initial statuses. Only touch it when the reading actually carries it.
+      if (status.movement !== undefined) {
+        upd.muse_movement = status.movement;
+        museMoveRef.current = status.movement;
+      }
       if (status.bands) {
         for (const k of ["delta", "theta", "alpha", "beta", "gamma"] as const) {
           if (status.bands[k] != null) upd[k] = status.bands[k];
         }
       }
       if (Object.keys(upd).length === 0) return;
+      lastMuseRef.current = Date.now(); // real data arrived
       museLatestRef.current = { ...museLatestRef.current, ...upd };
+      // Feed EEG engagement + head movement into the enjoyment score.
+      const ratio = upd.alpha_beta_ratio ?? (upd.alpha != null && upd.beta ? upd.alpha / upd.beta : null);
+      enjoyRef.current = {
+        ...enjoyRef.current,
+        ratio: ratio ?? enjoyRef.current.ratio,
+        movement: bestMovement(),
+      };
       push(upd);
     });
   }, [push]);
 
+  // Dynamic gap-filler: when a live source stops producing (face lost, headband
+  // dropped, failed to start) invent plausible values so the graphs keep moving.
+  // Real data always wins — the moment it returns, freshness updates and we stop.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!autofill) {
+        setFilling((f) => (f.cam || f.muse ? { cam: false, muse: false } : f));
+        return;
+      }
+      const now = Date.now();
+      let cam = false;
+      let muse = false;
+
+      if (cameraOnRef.current && now - lastCamRef.current > GAP_MS) {
+        const r = stepCameraSim(camSimRef.current);
+        camSimRef.current = r.next;
+        setExpression(r.expression);
+        enjoyRef.current = { ...enjoyRef.current, valence: r.valence, movement: r.movement, hr: r.hr };
+        push(r.reading);
+        cam = true;
+      }
+
+      const ms = museStateRef.current;
+      if ((ms === "streaming" || ms === "error") && now - lastMuseRef.current > GAP_MS) {
+        const upd = stepMuseSim();
+        museLatestRef.current = { ...museLatestRef.current, ...upd };
+        museMoveRef.current = upd.muse_movement ?? museMoveRef.current;
+        enjoyRef.current = {
+          ...enjoyRef.current,
+          ratio: upd.alpha_beta_ratio ?? enjoyRef.current.ratio,
+          movement: bestMovement(),
+        };
+        push(upd);
+        muse = true;
+      }
+
+      setFilling((prev) => (prev.cam === cam && prev.muse === muse ? prev : { cam, muse }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [autofill, push]);
+
   const startCamera = useCallback(async () => {
-    const { mode } = await window.museic.startCapture({ simulate });
+    lastCamRef.current = Date.now(); // grace period before gap-filling kicks in
+    const { mode } = await window.museic.startCapture();
     setCameraMode(mode);
-  }, [simulate]);
+  }, []);
+
   const stopCamera = useCallback(async () => {
     await window.museic.stopCapture();
     setCameraMode(null);
+    setValidation(null);
   }, []);
 
-  // Stop the camera when leaving the page (don't leave it capturing in the background).
+  // Optional webcam self-view. Off by default: it opens the camera a SECOND time
+  // (Presage already holds it) and heavy GPU video compositing has crashed some
+  // Macs — hence opt-in. Only runs while the checkbox is on and the camera is up.
+  const stopFeed = useCallback(() => {
+    streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setFeedError(null);
+  }, []);
+
   useEffect(() => {
-    return () => void window.museic.stopCapture();
+    if (!(showPreview && cameraMode !== null)) {
+      stopFeed();
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+        if (cancelled) { stream.getTracks().forEach((tr) => tr.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setFeedError(null);
+      } catch (e) {
+        setFeedError((e as Error).message || String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showPreview, cameraMode, stopFeed]);
+
+  // Auto-start the camera when the Signals view opens (Muse auto-connects via
+  // <MuseControl autoStart/>). Runs on mount; the cleanup below stops it.
+  useEffect(() => {
+    void startCamera();
+  }, [startCamera]);
+
+  // Cleanup on unmount.
+  useEffect(() => {
+    return () => {
+      void window.museic.stopCapture();
+      streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    };
   }, []);
 
   const clear = () => {
@@ -191,15 +345,17 @@ export default function MetricsView() {
 
   const cameraOn = cameraMode !== null;
   const latest = samples.length ? samples[samples.length - 1] : null;
+  const showValidation = validation && validation.code !== 0 && cameraMode === "presage";
+
+  const cameraMetrics = METRICS.filter((m) => m.source === "camera");
+  const museMetrics = METRICS.filter((m) => m.source === "muse");
 
   return (
     <div className="pad metrics-view">
       <header className="metrics-head">
         <h2>Signals</h2>
-        <p className="muted">
-          Every raw metric the sensors emit, live — camera vitals, facial expression, and the five
-          EEG brain-wave bands (δ/θ/α/β/γ) from the Muse. Start the camera and/or connect the Muse
-          and watch them stream. A viewing &amp; testing harness.
+        <p className="muted small">
+          Live raw sensor streams — camera vitals + the Muse EEG bands. Start a source to watch.
         </p>
       </header>
 
@@ -207,83 +363,158 @@ export default function MetricsView() {
         <button className={cameraOn ? "" : "primary"} onClick={() => void (cameraOn ? stopCamera() : startCamera())}>
           {cameraOn ? "■ Stop camera" : "▶ Start camera"}
         </button>
-        {cameraOn && (
-          <span className={`chip ${cameraMode === "simulated" ? "chip-warn" : "chip-ok"}`}>
-            camera: {cameraMode}
-          </span>
-        )}
-        <MuseControl />
+        <MuseControl autoStart />
         <span className="spacer" />
-        <label className="muse-sim small" title="Applies to a fresh camera/Muse start">
-          <input type="checkbox" checked={simulate} onChange={(e) => setSimulate(e.target.checked)} />
-          simulate
+        <label className="muse-sim small" title="When the camera or Muse goes quiet, invent plausible values so the graphs keep moving. Real data always takes over when it returns.">
+          <input type="checkbox" checked={autofill} onChange={(e) => setAutofill(e.target.checked)} />
+          fill gaps with simulated data
+        </label>
+        <label className="muse-sim small" title="Experimental: opens the webcam a second time for a self-view. Can be heavy on some Macs.">
+          <input type="checkbox" checked={showPreview} onChange={(e) => setShowPreview(e.target.checked)} />
+          camera preview
         </label>
         <button onClick={clear}>Clear</button>
       </div>
 
       {cameraMode === "simulated" && (
+        <div className="banner warn">Camera data is SIMULATED — plausible fakes for testing.</div>
+      )}
+      {(filling.cam || filling.muse) && (
         <div className="banner warn">
-          Camera data is SIMULATED (no PRESAGE_API_KEY / SDK) — values are plausible fakes for testing.
+          Sensor quiet — filling {filling.cam && filling.muse ? "camera + Muse" : filling.cam ? "camera" : "Muse"} gaps with simulated data.
+        </div>
+      )}
+      {showValidation && (
+        <div className="banner err">Presage: {validation!.hint || `status ${validation!.code}`}</div>
+      )}
+      {feedError && (
+        <div className="banner warn">Camera preview unavailable: {feedError}</div>
+      )}
+
+      {showPreview && cameraOn && (
+        <div className="camera-feed">
+          <video ref={videoRef} muted playsInline className="camera-video" />
+          <span className="camera-feed-tag small">webcam preview (experimental)</span>
         </div>
       )}
 
+      <EnjoymentCard samples={samples} value={latest ? latest.enjoyment : null} />
+
+      <div className="metrics-group-title">Camera</div>
       <div className="metrics-grid">
-        {METRICS.filter((m) => m.source === "camera").map((m) => (
+        {cameraMetrics.map((m) => (
           <MetricCard key={m.key} def={m} samples={samples} value={latest ? latest[m.key] : null} />
         ))}
         <ExpressionCard expression={expression} />
-        {METRICS.filter((m) => m.source === "muse").map((m) => (
+      </div>
+
+      <div className="metrics-group-title">Brain waves · Muse EEG</div>
+      <div className="metrics-grid">
+        {museMetrics.map((m) => (
           <MetricCard key={m.key} def={m} samples={samples} value={latest ? latest[m.key] : null} />
         ))}
       </div>
 
       <section className="metrics-explainer">
-        <h3>Derived &amp; song metrics (not raw sensor streams)</h3>
-        <p className="muted small">
-          These aren't shown above because they're computed, not sensed. They live on the per-song
-          graph (open a song → “View my graph”).
-        </p>
-        <ul className="metrics-defs">
-          <li><b>Arousal</b> — fused intensity (0–1). Fast tier: expression shifts (40%), movement (35%), Muse α/β (25%); heart rate &amp; HRV corroborate slowly underneath.</li>
-          <li><b>Valence</b> — pleasant ↔ unpleasant (−1…+1), mapped from the dominant facial expression × its confidence.</li>
-          <li><b>Quadrant</b> — arousal × valence bucket: hype / tense / chill / sad.</li>
-          <li><b>Song energy</b> — per-second loudness/RMS from the track (librosa), the “music” reference curve.</li>
-          <li><b>Spectral brightness</b> — spectral centroid; how treble-heavy the moment is.</li>
-          <li><b>Onset density</b> — note/attack rate per second; busier = higher.</li>
+        <h3>Derived &amp; song metrics</h3>
+        <p className="muted small">Computed, not sensed — shown on a song's graph, not here.</p>
+        <ul className="metrics-defs small">
+          <li><b>Arousal</b> — fused intensity: expression, movement, Muse α/β; HR/HRV corroborate.</li>
+          <li><b>Valence</b> — pleasant ↔ unpleasant, from facial expression.</li>
+          <li><b>Quadrant</b> — arousal × valence: hype / tense / chill / sad.</li>
+          <li><b>Energy · brightness · onset</b> — the track's own per-second audio curves.</li>
         </ul>
       </section>
     </div>
   );
 }
 
+/**
+ * Fit the Y-axis to the data that's actually there (with a little headroom), so
+ * a small signal (Theta 3%) fills its card instead of hugging the bottom of a
+ * fixed 0..1 axis. A flat line gets centred rather than stretched to noise.
+ */
+function adaptiveDomain(values: number[]): [number, number] {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = max === min ? (Math.abs(max) || 1) * 0.25 + 1e-6 : (max - min) * 0.15;
+  return [min - pad, max + pad];
+}
+
+/**
+ * Prominent, experimental "enjoyment" readout. Fuses positive valence, groove,
+ * EEG engagement and arousal into one 0..1 curve (see computeEnjoyment).
+ */
+function EnjoymentCard({ samples, value }: { samples: Sample[]; value: number | null }) {
+  const data = samples.map((s) => ({ t: s.t, v: s.enjoyment }));
+  const hasData = data.some((d) => d.v != null);
+  const pct = value != null ? Math.round(value * 100) : null;
+  return (
+    <div className="metric-card enjoyment-card">
+      <div className="metric-card-head">
+        <span className="metric-label">
+          Enjoyment <span className="tag-exp">experimental</span>
+        </span>
+        <span className="metric-value">
+          {pct != null ? `${pct}` : "—"}
+          <span className="metric-unit">/ 100</span>
+        </span>
+      </div>
+      <div className="metric-spark enjoyment-spark">
+        {hasData ? (
+          <ResponsiveContainer width="100%" height={170}>
+            <AreaChart data={data} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="grad-enjoyment" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ffb454" stopOpacity={0.45} />
+                  <stop offset="100%" stopColor="#ff6ec7" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <YAxis domain={[0, 1]} hide />
+              <Area type="monotone" dataKey="v" stroke="#ffb454" strokeWidth={3}
+                fill="url(#grad-enjoyment)" dot={false} connectNulls isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="metric-empty small muted">start the camera or Muse</div>
+        )}
+      </div>
+      <p className="metric-explain small muted">
+        Core = 0.50·EEG-engagement + 0.30·movement + 0.20·HR-arousal (movement prefers Muse head-motion over the camera). Only a smile nudges it up (≤ +0.15); negative faces are ignored (detector false-defaults to sad at rest).
+      </p>
+    </div>
+  );
+}
+
 function MetricCard({ def, samples, value }: { def: MetricDef; samples: Sample[]; value: number | null }) {
   const data = samples.map((s) => ({ t: s.t, v: s[def.key] }));
-  const hasData = data.some((d) => d.v != null);
+  const values = data.map((d) => d.v).filter((v): v is number => v != null);
+  const hasData = values.length > 0;
+  const domain = hasData ? adaptiveDomain(values) : def.domain;
+  const gid = `grad-${def.key}`;
   return (
     <div className="metric-card">
       <div className="metric-card-head">
         <span className="metric-label">{def.label}</span>
-        <span className={`chip chip-${def.source}`}>{def.source}</span>
-      </div>
-      <div className="metric-value">
-        {value != null ? def.format(value) : "—"}
-        <span className="metric-unit">{def.unit}</span>
+        <span className="metric-value">
+          {value != null ? def.format(value) : "—"}
+          <span className="metric-unit">{def.unit}</span>
+        </span>
       </div>
       <div className="metric-spark">
         {hasData ? (
-          <ResponsiveContainer width="100%" height={64}>
-            <LineChart data={data} margin={{ top: 4, right: 2, bottom: 0, left: 2 }}>
-              <YAxis domain={def.domain} hide />
-              <Line
-                type="monotone"
-                dataKey="v"
-                stroke={def.color}
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            </LineChart>
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={data} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={def.color} stopOpacity={0.28} />
+                  <stop offset="100%" stopColor={def.color} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <YAxis domain={domain} hide />
+              <Area type="monotone" dataKey="v" stroke={def.color} strokeWidth={2.5}
+                fill={`url(#${gid})`} dot={false} connectNulls isAnimationActive={false} />
+            </AreaChart>
           </ResponsiveContainer>
         ) : (
           <div className="metric-empty small muted">
@@ -300,11 +531,8 @@ function ExpressionCard({ expression }: { expression: { label: string; conf: num
   return (
     <div className="metric-card">
       <div className="metric-card-head">
-        <span className="metric-label">Facial expression</span>
-        <span className="chip chip-camera">camera</span>
-      </div>
-      <div className="metric-value expression-value">
-        {expression ? expression.label : "—"}
+        <span className="metric-label">Expression</span>
+        <span className="metric-value expression-value">{expression ? expression.label : "—"}</span>
       </div>
       <div className="metric-spark expression-conf">
         {expression ? (
@@ -318,7 +546,7 @@ function ExpressionCard({ expression }: { expression: { label: string; conf: num
           <div className="metric-empty small muted">start the camera</div>
         )}
       </div>
-      <p className="metric-explain small muted">{EXPRESSIONS_INFO}</p>
+      <p className="metric-explain small muted">Dominant expression; drives valence.</p>
     </div>
   );
 }

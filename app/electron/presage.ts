@@ -126,6 +126,7 @@ function startRealCapture(
     });
     sdk.on("error", (code, message, retryable) => {
       console.error("Presage SDK error", code, message, "retryable=", retryable);
+      onValidation?.({ code: code || -1, hint: message ? `Presage error: ${message}` : "Presage SDK error" });
     });
 
     sdk.useCamera({
@@ -139,6 +140,7 @@ function startRealCapture(
     return { mode: "presage" };
   } catch (err) {
     console.error("Failed to start Presage SDK -- falling back to simulation.", err);
+    onValidation?.({ code: -1, hint: "Presage SDK failed to start — using simulation." });
     startSimulation(emit);
     return { mode: "simulated" };
   }
