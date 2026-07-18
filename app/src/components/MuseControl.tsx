@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MuseStatus } from "../types";
-import { useEnjoyment } from "../enjoyment";
+import { useEnjoyment } from "../enjoyment"; // Assuming this is a custom hook you've added
 import { StyleInjector } from "./StyleInjector";
 
 /**
@@ -12,6 +12,7 @@ import { StyleInjector } from "./StyleInjector";
 export default function MuseControl({ autoStart = false }: { autoStart?: boolean }) {
   const [status, setStatus] = useState<MuseStatus>({ state: "stopped" });
   const enjoyment = useEnjoyment();
+  const [simulate, setSimulate] = useState(false);
 
   useEffect(() => {
     void window.museic.getMuseStatus().then(setStatus);
@@ -26,10 +27,10 @@ export default function MuseControl({ autoStart = false }: { autoStart?: boolean
       const s = await window.museic.getMuseStatus();
       if (cancelled || s.state !== "stopped") return;
       setStatus({ state: "starting" });
-      setStatus(await window.museic.startMuse());
+      setStatus(await window.museic.startMuse({ simulate }));
     })();
     return () => { cancelled = true; };
-  }, [autoStart]);
+  }, [autoStart, simulate]);
 
   const busy = status.state === "starting" || status.state === "connecting";
   const active = status.state === "streaming";
@@ -39,7 +40,7 @@ export default function MuseControl({ autoStart = false }: { autoStart?: boolean
       await window.museic.stopMuse();
     } else {
       setStatus({ state: "starting" });
-      const next = await window.museic.startMuse();
+      const next = await window.museic.startMuse({ simulate });
       setStatus(next);
     }
   };
@@ -50,7 +51,7 @@ export default function MuseControl({ autoStart = false }: { autoStart?: boolean
       <button className="muse-toggle" onClick={() => void toggle()}>
         {active || busy ? "◼ Muse" : "◎ Connect Muse"}
       </button>
-      {shortLabel(status) && <span className="muse-state small">{shortLabel(status)}</span>}
+      {shortLabel(status, enjoyment) && <span className="muse-state small">{shortLabel(status, enjoyment)}</span>}
       {status.state === "stopped" && (
         <label className="muse-sim small" title="Run without a headband (synthetic band power)">
           <input
