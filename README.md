@@ -93,22 +93,22 @@ external services that only handle identity, narratives, and playlist export.
                │ feed songs / post reactions / get graph  │
                ▼                                          │
 ┌────────────────────────────┐       narrative request    │
-│       FastAPI backend       │────────────────────────┐  │
-│ Auth0 JWT validation        │                        ▼  │
-│ arousal/valence derivation  │               ┌────────────────────────────┐
-│ profile rebuilds            │               │       Backboard.io         │
-│ recommendations + ML blend  │               │ Gemini profile narrative   │
-│ song-graph + compare APIs   │               └────────────────────────────┘
-│ playlist export API         │────────────────────────────────────┘
+│       FastAPI backend      │────────────────────────┐   │
+│ Auth0 JWT validation       │                        ▼   │
+│ arousal/valence derivation │               ┌────────────────────────────┐
+│ profile rebuilds           │               │       Backboard.io         │
+│ recommendations + ML blend │               │ Gemini profile narrative   │
+│ song-graph + compare APIs  │               └────────────────────────────┘
+│ playlist export API        │──────────────────────────────┘
 └───────▲──────┬──────▲──────┘
         │      │      │
         │      │      │ read songs/profiles, write reactions/profiles
         │      │      ▼
         │      │  ┌────────────────────────────┐
-        │      │  │          MongoDB            │
-        │      │  │ songs                       │
-        │      │  │ reactions time-series       │
-        │      │  │ profiles                    │
+        │      │  │          MongoDB           │
+        │      │  │ songs                      │
+        │      │  │ reactions time-series      │
+        │      │  │ profiles                   │
         │      │  └─────────────▲──────────────┘
         │      │                │ seed songs
         │      │                │
