@@ -25,6 +25,11 @@ import * as auth from "./auth";
 import * as presage from "./presage";
 import * as muse from "./muse";
 
+// macOS GPU driver crashes (SIGBUS + "texture unloadable") when compositing the
+// live webcam <video> texture alongside the charts. Software compositing is
+// plenty for this UI and sidesteps the native crash. Must run before app-ready.
+app.disableHardwareAcceleration();
+
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 const NOW_PLAYING_FILE = path.join(os.tmpdir(), "museic_now_playing.json");
 
