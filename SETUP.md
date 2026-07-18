@@ -55,21 +55,19 @@ Auth0 owns the Spotify OAuth exchange — there is deliberately **no Spotify OAu
 
 ### 6. Presage SmartSpectra (`PRESAGE_API_KEY`)
 - Register at https://physiology.presagetech.com → get an API key.
-- ⚠️ **Confirm the Node.js/Electron SDK's macOS support directly with Presage**
-  (support@presagetech.com) before relying on it at the venue — their C++ SDK explicitly
-  documents macOS support; the Electron wrapper's docs do not as clearly.
+- The Electron app uses Presage's public `@smartspectra/node-sdk` package. The SDK docs list
+  macOS Apple Silicon (`darwin-arm64`), Linux x64/ARM64, and Windows x64 as supported.
+- Optional camera overrides for the Electron app: `PRESAGE_CAMERA_INDEX`, `PRESAGE_CAMERA_WIDTH`,
+  `PRESAGE_CAMERA_HEIGHT`, `PRESAGE_CAMERA_FPS`.
 
 ---
 
 ## (b) Stubs / placeholders that need something only you can provide
 
-1. **`app/electron/presage.ts` — the Presage SDK wiring (the big one).**
-   Presage's Node/Electron SDK is distributed via their developer portal, not the public npm
-   index, so it could not be pre-installed. Follow the `PLACEHOLDER` block at the top of the
-   file: install their package, set `PRESAGE_SDK_MODULE=<package name>` in `.env`, and implement
-   `startRealCapture()` (map their ~1 Hz metrics payload → `SensorReading`). Until then the app
-   runs on a clearly-labelled **simulation** (yellow banner in the feed) so every downstream
-   piece is testable end-to-end.
+1. **Presage API key.** The SDK wiring is installed in `app/electron/presage.ts`; you only need
+   to set `PRESAGE_API_KEY` in `.env`. If the key is missing or the native SDK cannot start,
+   the app falls back to a clearly-labelled **simulation** (yellow banner in the feed) so every
+   downstream piece is still testable end-to-end.
 2. **Your audio library.** Point `AUDIO_DIR` in `.env` at your folder of ~50 local tracks and run
    `scripts/extract_features.py` (see below). Name files `Artist - Title.mp3` for automatic
    metadata. Tracks over ~18 MB skip Gemini tagging (inline upload limit) — re-encode or tag
