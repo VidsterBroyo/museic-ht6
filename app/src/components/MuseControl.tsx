@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MuseStatus } from "../types";
+import { StyleInjector } from "./StyleInjector";
 
 /**
  * Top-bar control for the in-app Muse companion service (RFC §2). Toggles the
@@ -31,10 +32,11 @@ export default function MuseControl() {
 
   return (
     <span className={`muse-pill muse-${status.state}`} title={label(status)}>
+      <StyleInjector />
       <button className="muse-toggle" onClick={() => void toggle()}>
         {active || busy ? "◼ Muse" : "◎ Connect Muse"}
       </button>
-      <span className="muse-state small">{shortLabel(status)}</span>
+      {shortLabel(status) && <span className="muse-state small">{shortLabel(status)}</span>}
       {status.state === "stopped" && (
         <label className="muse-sim small" title="Run without a headband (synthetic band power)">
           <input

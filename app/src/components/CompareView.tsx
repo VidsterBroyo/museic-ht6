@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { api } from "../api";
 import type { CompareResponse } from "../types";
+import { StyleInjector } from "./StyleInjector";
 
 /** Two-person live compatibility demo (RFC §6 compare). Both people react to
  * the same songs (side-by-side on one laptop, logged in as different Auth0
@@ -40,6 +41,7 @@ export default function CompareView({ selfId }: { selfId: string }) {
 
   return (
     <div className="pad">
+      <StyleInjector />
       <h2>Compare two listeners</h2>
       <p className="muted small">
         You are <code>{selfId}</code>. Paste the other person's user id (their Auth0 sub — shown in
@@ -78,12 +80,12 @@ export default function CompareView({ selfId }: { selfId: string }) {
                   <XAxis dataKey="t" stroke="#888" />
                   <YAxis domain={[0, 1]} stroke="#888" />
                   <Tooltip
-                    contentStyle={{ background: "#17171f", border: "1px solid #333" }}
+                    contentStyle={{ background: "#111119", border: "1px solid #444" }}
                     labelFormatter={(t) => `t = ${t}s`}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="arousal_a" stroke="#ff5d8f" dot={false} strokeWidth={2} name="you" />
-                  <Line type="monotone" dataKey="arousal_b" stroke="#ffd166" dot={false} strokeWidth={2} name="them" />
+                  <Line type="monotone" dataKey="arousal_a" stroke="#ff00a0" dot={false} strokeWidth={2} name="you" />
+                  <Line type="monotone" dataKey="arousal_b" stroke="#ffee00" dot={false} strokeWidth={2} name="them" />
                 </LineChart>
               </ResponsiveContainer>
             </div>

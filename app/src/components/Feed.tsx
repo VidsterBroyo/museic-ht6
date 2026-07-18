@@ -1,34 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, audioUrl } from "../api";
-import type { SensorReading, Song, ValidationStatus } from "../types";
-
-/** Human-readable fallback when the Presage SDK gives a code but no hint text. */
-function describeValidation(code: number): string {
-  switch (code) {
-    case 1:
-      return "No face detected — center your face in the camera.";
-    case 7:
-      return "Move back a little so your upper chest is in view.";
-    default:
-      return "Adjusting camera signal…";
-  }
-}
-
-/** Human-readable message for an <audio> element MediaError. */
-function describeMediaError(err: MediaError | null): string {
-  switch (err?.code) {
-    case MediaError.MEDIA_ERR_ABORTED:
-      return "playback aborted";
-    case MediaError.MEDIA_ERR_NETWORK:
-      return "network error while loading audio";
-    case MediaError.MEDIA_ERR_DECODE:
-      return "audio could not be decoded (corrupt or unsupported encoding)";
-    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-      return "audio format not supported by the player";
-    default:
-      return `unknown audio error${err?.message ? `: ${err.message}` : ""}`;
-  }
-}
+import { annotatePoint } from "./signals";
+import type { SensorReading, Song, SongGraphPoint, SongGraphResponse } from "../types";
+import { StyleInjector } from "./StyleInjector";
+import SongGraph from "./SongGraph";
 
 /**
  * TikTok-style vertical scroll feed (RFC §1/§2).
@@ -47,19 +22,18 @@ interface BufferedReading {
 
 const FLUSH_EVERY_MS = 10_000;
 
-export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) => void }) {
+export default function Feed({ userId }: { userId: string }) {
   const [songs, setSongs] = useState<Song[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
   const [captureMode, setCaptureMode] = useState<"presage" | "simulated" | null>(null);
   const [lastReading, setLastReading] = useState<SensorReading | null>(null);
-  const [captureNote, setCaptureNote] = useState<string | null>(null);
-  const [audioError, setAudioError] = useState<string | null>(null);
+  const [graphData, setGraphData] = useState<SongGraphResponse | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bufferRef = useRef<BufferedReading[]>([]);
   const currentRef = useRef<string | null>(null);
-  const reactedRef = useRef<Set<string>>(new Set());
+  const lastReadingRef = useRef<SensorReading | null>(null);
 
   useEffect(() => {
     api<Song[]>("/songs")
@@ -76,28 +50,44 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
         method: "POST",
         body: { song_id: songId, source: "presage", readings },
       });
-      reactedRef.current.add(songId);
     } catch (e) {
       console.error("batch post failed", e);
     }
   }, []);
 
-  // Presage capture-quality hints -> a subtle, self-clearing note.
-  useEffect(() => {
-    return window.museic.onValidation((status: ValidationStatus) => {
-      setCaptureNote(
-        status.code === 0 ? null : status.hint || describeValidation(status.code),
-      );
-    });
-  }, []);
-
   // Sensor readings -> tag with song second -> buffer.
   useEffect(() => {
     return window.museic.onSensorReading((reading) => {
+      const prevReading = lastReadingRef.current;
+      lastReadingRef.current = reading;
       setLastReading(reading);
+
       const audio = audioRef.current;
       const songId = currentRef.current;
       if (!audio || !songId || audio.paused) return;
+
+      // Real-time graph update.
+      setGraphData((prevData) => {
+        if (!prevData || prevData.song.song_id !== songId) return prevData;
+
+        const t = Math.floor(audio.currentTime);
+        if (t < 0 || (prevData.points.length > 0 && prevData.points[prevData.points.length - 1].t === t)) {
+          return prevData; // Avoid duplicate points for the same second.
+        }
+
+        const newAnnotation = annotatePoint(reading, prevReading);
+        const fullPoint: SongGraphPoint = {
+          t,
+          ...newAnnotation,
+          energy: prevData.song.features?.energy_curve?.[t] ?? null,
+          brightness: prevData.song.features?.spectral_brightness_curve?.[t] ?? null,
+          onset_density: prevData.song.features?.onset_density_curve?.[t] ?? null,
+        };
+
+        return { ...prevData, points: [...prevData.points, fullPoint] };
+      });
+
+      // Buffering for backend.
       const t = Math.floor(audio.currentTime);
       if (t < 0) return;
       bufferRef.current.push({
@@ -106,7 +96,7 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
         movement_intensity: reading.movement_intensity,
       });
     });
-  }, []);
+  }, [graphData]);
 
   // Periodic flush while playing.
   useEffect(() => {
@@ -129,7 +119,6 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
     await flush(currentRef.current);
     currentRef.current = null;
     setCurrent(null);
-    setCaptureNote(null);
     await window.museic.setNowPlaying(null);
   }, [flush]);
 
@@ -140,16 +129,23 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
         return;
       }
       await flush(currentRef.current);
+      setGraphData({ song, points: [] }); // Show graph box immediately
+
       const audio = audioRef.current;
       if (!audio) return;
-      setAudioError(null);
       try {
         audio.src = await audioUrl(song.song_id);
-        audio.muted = false;
-        audio.volume = 1;
+        // Pre-fetch existing graph data to append to.
+        try {
+          const initialGraphData = await api<SongGraphResponse>(`/song-graph/${userId}/${song.song_id}`);
+          setGraphData(initialGraphData);
+        } catch (e) {
+          // 404 is fine, means no data yet.
+          console.log(`No prior graph data for ${song.song_id}`);
+        }
         await audio.play();
       } catch (e) {
-        setAudioError(`audio playback failed: ${String(e)}`);
+        setError(`audio playback failed: ${String(e)}`);
         return;
       }
       currentRef.current = song.song_id;
@@ -160,7 +156,7 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
         setCaptureMode(mode);
       }
     },
-    [captureMode, flush, stopCurrent],
+    [captureMode, flush, stopCurrent, userId],
   );
 
   if (error) return <div className="pad error">{error}</div>;
@@ -177,30 +173,15 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
 
   return (
     <div className="feed-wrap">
-      <audio
-        ref={audioRef}
-        onEnded={() => void stopCurrent()}
-        onError={() => setAudioError(describeMediaError(audioRef.current?.error ?? null))}
-        onPlaying={() => setAudioError(null)}
-      />
-      {audioError && (
-        <div className="banner error">
-          Audio: {audioError}
-          <button className="banner-dismiss" onClick={() => setAudioError(null)}>
-            ✕
-          </button>
-        </div>
-      )}
+      <StyleInjector />
+      <audio ref={audioRef} onEnded={() => void stopCurrent()} />
       {captureMode === "simulated" && (
         <div className="banner warn">
           Sensor data is SIMULATED — wire the Presage SDK to capture real reactions (SETUP.md).
         </div>
       )}
-      {captureNote && current && captureMode === "presage" && (
-        <div className="banner note">📷 {captureNote}</div>
-      )}
       {lastReading && current && (
-        <div className="banner live">
+        <div className="live-hud">
           ● live&nbsp; hr {lastReading.raw.hr_bpm ?? "–"} bpm · {lastReading.raw.expression ?? "–"}{" "}
           ({((lastReading.raw.expression_confidence ?? 0) * 100).toFixed(0)}%) · movement{" "}
           {((lastReading.movement_intensity ?? 0) * 100).toFixed(0)}%
@@ -209,12 +190,11 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
       <div className="feed">
         {songs.map((song) => {
           const isPlaying = current === song.song_id;
-          const reacted = reactedRef.current.has(song.song_id);
           return (
             <section key={song.song_id} className={`song-card ${isPlaying ? "playing" : ""}`}>
               <div className="song-meta">
-                <h2>{song.title}</h2>
-                <p className="muted">{song.artist || "unknown artist"}</p>
+                <h2 className="song-title">{song.title}</h2>
+                <p className="song-artist">{song.artist || "unknown artist"}</p>
                 <p className="muted small">
                   {song.tempo_bpm ? `${song.tempo_bpm} bpm` : ""} {song.key ? `· ${song.key}` : ""}{" "}
                   {song.duration_s ? `· ${Math.floor(song.duration_s / 60)}:${String(song.duration_s % 60).padStart(2, "0")}` : ""}
@@ -229,12 +209,19 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
                   </div>
                 )}
               </div>
+              <div className="song-album-art">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                </svg>
+              </div>
               <div className="song-actions">
-                <button className="primary big" onClick={() => void play(song)}>
-                  {isPlaying ? "■ Stop" : "▶ Play & react"}
+                <button className="play-button" onClick={() => void play(song)}>
+                  {isPlaying ? "■" : "▶"}
                 </button>
-                {(reacted || !isPlaying) && (
-                  <button onClick={() => onOpenGraph(song.song_id)}>View my graph</button>
+              </div>
+              <div className="chart-box">
+                {graphData?.song.song_id === song.song_id && (
+                  <SongGraph song={graphData.song} points={graphData.points} />
                 )}
               </div>
             </section>
