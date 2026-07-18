@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld("museic", {
     ipcRenderer.on("sensor:reading", listener);
     return () => ipcRenderer.removeListener("sensor:reading", listener as never);
   },
+  onValidation: (cb: (status: unknown) => void) => {
+    const listener = (_e: unknown, status: unknown) => cb(status);
+    ipcRenderer.on("sensor:validation", listener);
+    return () => ipcRenderer.removeListener("sensor:validation", listener as never);
+  },
   setNowPlaying: (songId: string | null) => ipcRenderer.invoke("now-playing:set", songId),
   getConfig: () => ipcRenderer.invoke("config:get"),
 });

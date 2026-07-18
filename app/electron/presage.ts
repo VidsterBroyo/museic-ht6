@@ -33,7 +33,13 @@ export interface SensorReading {
   simulated: boolean;
 }
 
+export interface ValidationStatus {
+  code: number;
+  hint: string;
+}
+
 type Emit = (reading: SensorReading) => void;
+type EmitValidation = (status: ValidationStatus) => void;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let sdkInstance: SmartSpectraSDK | null = null;
@@ -42,10 +48,13 @@ export function isRunning(): boolean {
   return timer !== null || sdkInstance !== null;
 }
 
-export function startCapture(emit: Emit): { mode: "presage" | "simulated" } {
+export function startCapture(
+  emit: Emit,
+  onValidation?: EmitValidation,
+): { mode: "presage" | "simulated" } {
   stopCapture();
   if (process.env.PRESAGE_API_KEY) {
-    return startRealCapture(emit);
+    return startRealCapture(emit, onValidation);
   } else {
     console.warn(
       "PRESAGE_API_KEY not set -- using SIMULATED sensor data (see SETUP.md).",
@@ -71,7 +80,10 @@ export function stopCapture(): void {
 // ---------------------------------------------------------------------------
 // Real SDK integration.
 // ---------------------------------------------------------------------------
-function startRealCapture(emit: Emit): { mode: "presage" | "simulated" } {
+function startRealCapture(
+  emit: Emit,
+  onValidation?: EmitValidation,
+): { mode: "presage" | "simulated" } {
   try {
     const {
       SmartSpectraSDK,
@@ -104,6 +116,7 @@ function startRealCapture(emit: Emit): { mode: "presage" | "simulated" } {
     });
     sdk.on("validationStatus", (code, _ts, hint) => {
       if (code !== 0) console.warn("Presage validation:", code, hint);
+      onValidation?.({ code, hint: hint ?? "" });
     });
     sdk.on("error", (code, message, retryable) => {
       console.error("Presage SDK error", code, message, "retryable=", retryable);

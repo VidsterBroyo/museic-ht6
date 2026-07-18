@@ -1,6 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, audioUrl } from "../api";
-import type { SensorReading, Song } from "../types";
+import type { SensorReading, Song, ValidationStatus } from "../types";
+
+/** Human-readable fallback when the Presage SDK gives a code but no hint text. */
+function describeValidation(code: number): string {
+  switch (code) {
+    case 1:
+      return "No face detected — center your face in the camera.";
+    case 7:
+      return "Move back a little so your upper chest is in view.";
+    default:
+      return "Adjusting camera signal…";
+  }
+}
+
+/** Human-readable message for an <audio> element MediaError. */
+function describeMediaError(err: MediaError | null): string {
+  switch (err?.code) {
+    case MediaError.MEDIA_ERR_ABORTED:
+      return "playback aborted";
+    case MediaError.MEDIA_ERR_NETWORK:
+      return "network error while loading audio";
+    case MediaError.MEDIA_ERR_DECODE:
+      return "audio could not be decoded (corrupt or unsupported encoding)";
+    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+      return "audio format not supported by the player";
+    default:
+      return `unknown audio error${err?.message ? `: ${err.message}` : ""}`;
+  }
+}
 
 /**
  * TikTok-style vertical scroll feed (RFC §1/§2).
@@ -25,6 +53,8 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
   const [current, setCurrent] = useState<string | null>(null);
   const [captureMode, setCaptureMode] = useState<"presage" | "simulated" | null>(null);
   const [lastReading, setLastReading] = useState<SensorReading | null>(null);
+  const [captureNote, setCaptureNote] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bufferRef = useRef<BufferedReading[]>([]);
@@ -50,6 +80,15 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
     } catch (e) {
       console.error("batch post failed", e);
     }
+  }, []);
+
+  // Presage capture-quality hints -> a subtle, self-clearing note.
+  useEffect(() => {
+    return window.museic.onValidation((status: ValidationStatus) => {
+      setCaptureNote(
+        status.code === 0 ? null : status.hint || describeValidation(status.code),
+      );
+    });
   }, []);
 
   // Sensor readings -> tag with song second -> buffer.
@@ -90,6 +129,7 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
     await flush(currentRef.current);
     currentRef.current = null;
     setCurrent(null);
+    setCaptureNote(null);
     await window.museic.setNowPlaying(null);
   }, [flush]);
 
@@ -102,11 +142,14 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
       await flush(currentRef.current);
       const audio = audioRef.current;
       if (!audio) return;
+      setAudioError(null);
       try {
         audio.src = await audioUrl(song.song_id);
+        audio.muted = false;
+        audio.volume = 1;
         await audio.play();
       } catch (e) {
-        setError(`audio playback failed: ${String(e)}`);
+        setAudioError(`audio playback failed: ${String(e)}`);
         return;
       }
       currentRef.current = song.song_id;
@@ -134,11 +177,27 @@ export default function Feed({ onOpenGraph }: { onOpenGraph: (songId: string) =>
 
   return (
     <div className="feed-wrap">
-      <audio ref={audioRef} onEnded={() => void stopCurrent()} />
+      <audio
+        ref={audioRef}
+        onEnded={() => void stopCurrent()}
+        onError={() => setAudioError(describeMediaError(audioRef.current?.error ?? null))}
+        onPlaying={() => setAudioError(null)}
+      />
+      {audioError && (
+        <div className="banner error">
+          Audio: {audioError}
+          <button className="banner-dismiss" onClick={() => setAudioError(null)}>
+            ✕
+          </button>
+        </div>
+      )}
       {captureMode === "simulated" && (
         <div className="banner warn">
           Sensor data is SIMULATED — wire the Presage SDK to capture real reactions (SETUP.md).
         </div>
+      )}
+      {captureNote && current && captureMode === "presage" && (
+        <div className="banner note">📷 {captureNote}</div>
       )}
       {lastReading && current && (
         <div className="banner live">

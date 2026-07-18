@@ -16,6 +16,12 @@ export interface Session {
   user: { sub: string; name?: string; email?: string } | null;
 }
 
+/** A Presage capture-quality hint (e.g. "No face found."). code 0 means OK. */
+export interface ValidationStatus {
+  code: number;
+  hint: string;
+}
+
 export interface Song {
   song_id: string;
   title: string;
@@ -109,6 +115,7 @@ declare global {
       startCapture: () => Promise<{ mode: "presage" | "simulated" }>;
       stopCapture: () => Promise<void>;
       onSensorReading: (cb: (reading: SensorReading) => void) => () => void;
+      onValidation: (cb: (status: ValidationStatus) => void) => () => void;
       setNowPlaying: (songId: string | null) => Promise<void>;
       getConfig: () => Promise<{ backendUrl: string }>;
     };

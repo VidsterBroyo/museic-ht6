@@ -151,9 +151,14 @@ ipcMain.handle("auth:get-session", async () => {
 });
 
 ipcMain.handle("capture:start", () => {
-  return presage.startCapture((reading) => {
-    mainWindow?.webContents.send("sensor:reading", reading);
-  });
+  return presage.startCapture(
+    (reading) => {
+      mainWindow?.webContents.send("sensor:reading", reading);
+    },
+    (status) => {
+      mainWindow?.webContents.send("sensor:validation", status);
+    },
+  );
 });
 ipcMain.handle("capture:stop", () => presage.stopCapture());
 
