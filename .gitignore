@@ -20,3 +20,7 @@ Thumbs.db
 
 # Tooling
 *.log
+
+# Local audio library (see SETUP.md §b.2) — don't commit your music
+/library/*
+!/library/.gitkeep
