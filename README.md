@@ -76,29 +76,29 @@ external services that only handle identity, narratives, and playlist export.
 
 ```text
                          ┌────────────────────────────┐
-                         │            Auth0            │
-                         │ identity + JWTs             │
-                         │ Spotify Token Vault         │
+                         │            Auth0           │
+                         │ identity + JWTs            │
+                         │ Spotify Token Vault        │
                          └─────────────▲──────┬───────┘
                                        │      │ Spotify token at export
                          browser PKCE  │      ▼
 ┌────────────────────────────┐         │  ┌────────────────────────────┐
-│        Electron app         │─────────┘  │         Spotify API         │
-│ React feed UI               │            │ search tracks               │
-│ local song playback         │◀───────────│ create/populate playlist    │
-│ Presage camera capture      │ playlist   └─────────────▲──────────────┘
-│ song graphs + compare UI    │ result                   │
-└──────────────┬─────────────┘                          │
-               │ JWT-authenticated API calls             │ export request
-               │ feed songs / post reactions / get graph │
-               ▼                                         │
+│        Electron app        │─────────┘  │        Spotify API         │
+│ React feed UI              │            │       search tracks        │
+│ local song playback        │◀───────────│  create/populate playlist  │
+│ Presage camera capture     │ playlist   └───────────────▲────────────┘
+│ song graphs + compare UI   │ result                     │
+└──────────────┬─────────────┘                            │
+               │ JWT-authenticated API calls              │ export request
+               │ feed songs / post reactions / get graph  │
+               ▼                                          │
 ┌────────────────────────────┐       narrative request    │
 │       FastAPI backend       │────────────────────────┐  │
 │ Auth0 JWT validation        │                        ▼  │
-│ arousal/valence derivation  │       ┌────────────────────────────┐
-│ profile rebuilds            │       │       Backboard.io          │
-│ recommendations + ML blend  │       │ Gemini profile narrative    │
-│ song-graph + compare APIs   │       └────────────────────────────┘
+│ arousal/valence derivation  │               ┌────────────────────────────┐
+│ profile rebuilds            │               │       Backboard.io         │
+│ recommendations + ML blend  │               │ Gemini profile narrative   │
+│ song-graph + compare APIs   │               └────────────────────────────┘
 │ playlist export API         │────────────────────────────────────┘
 └───────▲──────┬──────▲──────┘
         │      │      │
@@ -112,21 +112,21 @@ external services that only handle identity, narratives, and playlist export.
         │      │  └─────────────▲──────────────┘
         │      │                │ seed songs
         │      │                │
-        │      │  ┌────────────────────────────┐
-        │      │  │     Offline extraction      │
-        │      │  │ local audio library         │
-        │      │  │ librosa feature curves      │
-        │      │  │ Gemini audio tags           │
+        │      │  ┌─────────────|──────────────┐
+        │      │  │     Offline extraction     │
+        │      │  │    local audio library     │
+        │      │  │   librosa feature curves   │
+        │      │  │     Gemini audio tags      │
         │      │  └────────────────────────────┘
         │      │
         │      │ same reactions schema as Presage
         │      │ source: "muse"
         │      │
 ┌───────┴──────▼─────────────┐
-│      Optional Muse path     │
-│ Muse 2 over BLE             │
-│ muse_service band power     │
-│ POST /reactions/batch       │
+│     Optional Muse path     │
+│      Muse 2 over BLE       │
+│   muse_service band power  │
+│    POST /reactions/batch   │
 └────────────────────────────┘
 ```
 
