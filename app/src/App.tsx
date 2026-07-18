@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { initApi } from "./api";
 import CompareView from "./components/CompareView";
 import Feed from "./components/Feed";
+import MetricsView from "./components/MetricsView";
+import MuseControl from "./components/MuseControl";
 import ProfileView from "./components/ProfileView";
 import SongGraph from "./components/SongGraph";
 import type { Session } from "./types";
@@ -10,7 +12,8 @@ type View =
   | { name: "feed" }
   | { name: "graph"; songId: string }
   | { name: "profile" }
-  | { name: "compare" };
+  | { name: "compare" }
+  | { name: "signals" };
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -45,6 +48,12 @@ export default function App() {
           Opens your system browser (Authorization Code + PKCE), then returns here via
           museic://callback.
         </p>
+        <div className="prelogin-muse">
+          <MuseControl />
+          <p className="muted small">
+            No account needed to test your Muse headband — connect for a live signal preview.
+          </p>
+        </div>
       </div>
     );
   }
@@ -83,10 +92,17 @@ export default function App() {
           >
             Compare
           </button>
+          <button
+            className={view.name === "signals" ? "active" : ""}
+            onClick={() => setView({ name: "signals" })}
+          >
+            Signals
+          </button>
         </nav>
         <div className="user-box">
+          <MuseControl />
           <span className="muted small">{session.user?.name ?? session.user?.sub}</span>
-          <button onClick={() => void copyToken()} title="For the Muse companion service (.env MUSE_USER_TOKEN)">
+          <button onClick={() => void copyToken()} title="Your Auth0 token — only needed to run the Muse service manually with --token">
             {copied ? "Copied!" : "Copy API token"}
           </button>
           <button onClick={() => void window.museic.logout()}>Log out</button>
@@ -105,6 +121,7 @@ export default function App() {
         )}
         {view.name === "profile" && <ProfileView userId={session.user?.sub ?? ""} />}
         {view.name === "compare" && <CompareView selfId={session.user?.sub ?? ""} />}
+        {view.name === "signals" && <MetricsView />}
       </main>
     </div>
   );

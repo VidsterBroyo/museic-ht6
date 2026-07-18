@@ -51,8 +51,14 @@ export function isRunning(): boolean {
 export function startCapture(
   emit: Emit,
   onValidation?: EmitValidation,
+  opts?: { simulate?: boolean },
 ): { mode: "presage" | "simulated" } {
   stopCapture();
+  if (opts?.simulate) {
+    // Explicit request (e.g. the Signals test page) -- skip the real SDK.
+    startSimulation(emit);
+    return { mode: "simulated" };
+  }
   if (process.env.PRESAGE_API_KEY) {
     return startRealCapture(emit, onValidation);
   } else {

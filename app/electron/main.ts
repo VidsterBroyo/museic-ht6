@@ -23,6 +23,7 @@ dotenv.config({ path: path.resolve(__dirname, "..", ".env") }); // optional app/
 
 import * as auth from "./auth";
 import * as presage from "./presage";
+import * as muse from "./muse";
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 const NOW_PLAYING_FILE = path.join(os.tmpdir(), "museic_now_playing.json");
@@ -107,8 +108,13 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   presage.stopCapture();
+  muse.stopMuse();
   clearNowPlaying();
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  muse.stopMuse();
 });
 
 // ---------------------------------------------------------------------------
@@ -150,7 +156,7 @@ ipcMain.handle("auth:get-session", async () => {
   return accessToken ? { accessToken, user: auth.getUserClaims() } : null;
 });
 
-ipcMain.handle("capture:start", () => {
+ipcMain.handle("capture:start", (_event, opts?: { simulate?: boolean }) => {
   return presage.startCapture(
     (reading) => {
       mainWindow?.webContents.send("sensor:reading", reading);
@@ -158,10 +164,24 @@ ipcMain.handle("capture:start", () => {
     (status) => {
       mainWindow?.webContents.send("sensor:validation", status);
     },
+    opts,
   );
 });
 ipcMain.handle("capture:stop", () => presage.stopCapture());
 
 ipcMain.handle("now-playing:set", (_event, songId: string | null) => setNowPlaying(songId));
+
+// Muse companion service: launched in-process, token injected from the session.
+ipcMain.handle("muse:start", async (_event, opts?: { address?: string; simulate?: boolean }) => {
+  // Token optional: without login the service runs in preview mode (live signal
+  // only, nothing persisted). With a token, readings are saved for the user.
+  const token = (await auth.getAccessToken()) ?? undefined;
+  return muse.startMuse(
+    { token, address: opts?.address, simulate: opts?.simulate },
+    (s) => mainWindow?.webContents.send("muse:status", s),
+  );
+});
+ipcMain.handle("muse:stop", () => muse.stopMuse());
+ipcMain.handle("muse:status", () => muse.getStatus());
 
 ipcMain.handle("config:get", () => ({ backendUrl: BACKEND_URL }));
