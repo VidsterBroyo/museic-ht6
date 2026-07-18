@@ -26,6 +26,7 @@ export type MuseStatus =
       preview?: boolean;
       lastRatio?: number | null;
       bands?: Record<string, number> | null;
+      movement?: number | null;
       posted?: number;
     }
   | { state: "error"; message: string };
@@ -153,6 +154,8 @@ function handleLine(line: string): void {
         preview: prev?.preview ?? true,
         lastRatio: (msg.ratio as number | null) ?? null,
         bands: (msg.bands as Record<string, number> | null) ?? prev?.bands ?? null,
+        // Explicit null (stale IMU) must clear, not stick to the last value.
+        movement: (msg.movement as number | null | undefined) ?? null,
         posted: postedTotal,
       });
       break;

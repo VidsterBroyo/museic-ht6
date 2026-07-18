@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MuseStatus } from "../types";
+import { useEnjoyment } from "../enjoyment";
 
 /**
  * Top-bar control for the in-app Muse companion service (RFC §2). Toggles the
@@ -7,14 +8,27 @@ import type { MuseStatus } from "../types";
  * injected automatically, so no manual copy/paste. Optional Muse signal, so
  * this is deliberately unobtrusive and never blocks the rest of the app.
  */
-export default function MuseControl() {
+export default function MuseControl({ autoStart = false }: { autoStart?: boolean }) {
   const [status, setStatus] = useState<MuseStatus>({ state: "stopped" });
-  const [simulate, setSimulate] = useState(false);
+  const enjoyment = useEnjoyment();
 
   useEffect(() => {
     void window.museic.getMuseStatus().then(setStatus);
     return window.museic.onMuseStatus(setStatus);
   }, []);
+
+  // Optional: connect on mount (e.g. the Signals view). Only if nothing's running.
+  useEffect(() => {
+    if (!autoStart) return;
+    let cancelled = false;
+    (async () => {
+      const s = await window.museic.getMuseStatus();
+      if (cancelled || s.state !== "stopped") return;
+      setStatus({ state: "starting" });
+      setStatus(await window.museic.startMuse());
+    })();
+    return () => { cancelled = true; };
+  }, [autoStart]);
 
   const busy = status.state === "starting" || status.state === "connecting";
   const active = status.state === "streaming";
@@ -24,7 +38,7 @@ export default function MuseControl() {
       await window.museic.stopMuse();
     } else {
       setStatus({ state: "starting" });
-      const next = await window.museic.startMuse({ simulate });
+      const next = await window.museic.startMuse();
       setStatus(next);
     }
   };
@@ -34,22 +48,12 @@ export default function MuseControl() {
       <button className="muse-toggle" onClick={() => void toggle()}>
         {active || busy ? "◼ Muse" : "◎ Connect Muse"}
       </button>
-      <span className="muse-state small">{shortLabel(status)}</span>
-      {status.state === "stopped" && (
-        <label className="muse-sim small" title="Run without a headband (synthetic band power)">
-          <input
-            type="checkbox"
-            checked={simulate}
-            onChange={(e) => setSimulate(e.target.checked)}
-          />
-          sim
-        </label>
-      )}
+      <span className="muse-state small">{shortLabel(status, enjoyment)}</span>
     </span>
   );
 }
 
-function shortLabel(s: MuseStatus): string {
+function shortLabel(s: MuseStatus, enjoyment: number | null): string {
   switch (s.state) {
     case "stopped":
       return "";
@@ -59,7 +63,7 @@ function shortLabel(s: MuseStatus): string {
       return "connecting…";
     case "streaming": {
       const dot = s.preview ? "◐" : "●";
-      if (s.lastRatio != null) return `${dot} α/β ${s.lastRatio.toFixed(2)}`;
+      if (enjoyment != null) return `${dot} enjoy ${Math.round(enjoyment * 100)}`;
       if (s.simulated) return `${dot} sim`;
       return s.preview ? `${dot} preview` : `${dot} live`;
     }

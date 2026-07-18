@@ -63,6 +63,7 @@ code { background: #1d1d27; padding: 1px 6px; border-radius: 4px; font-size: 0.8
 .banner { padding: 6px 16px; font-size: 0.8rem; text-align: center; position: relative; }
 .banner.warn { background: #4d3a12; color: #ffd166; }
 .banner.live { background: #16281c; color: #7ce7a2; }
+.banner.err { background: #3a1620; color: #ff8fa3; }
 /* Subtle, non-alarming capture-quality hint (Presage validation). */
 .banner.note { background: #1a1a24; color: var(--muted); border-bottom: 1px solid #262633; }
 .banner.error { background: #2c1618; color: #ff9a9a; }
@@ -194,26 +195,55 @@ code { background: #1d1d27; padding: 1px 6px; border-radius: 4px; font-size: 0.8
 .chip-warn { color: #ffd166; border-color: #4d3a12; }
 .chip-muse { color: #b3aef0; border-color: #3a3466; }
 
+/* Live webcam preview while the camera is on */
+.camera-feed { position: relative; width: 320px; margin: 0 0 18px; }
+.camera-video {
+  width: 320px; height: 240px; object-fit: cover; border-radius: 12px;
+  border: 1px solid var(--border); background: #000; transform: scaleX(-1); /* mirror */
+}
+.camera-feed-tag {
+  position: absolute; left: 10px; bottom: 10px; color: #fff;
+  background: rgba(0, 0, 0, 0.55); padding: 2px 8px; border-radius: 999px;
+}
+
+.metrics-group-title {
+  font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700; margin: 22px 0 10px;
+}
 .metrics-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 14px;
 }
 .metric-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 12px 10px; display: flex; flex-direction: column; gap: 4px;
 }
-.metric-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.metric-label { font-weight: 600; font-size: 0.92rem; }
+.metric-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.metric-label { font-weight: 600; font-size: 0.95rem; }
 .metric-value {
-  font-size: 1.7rem; font-weight: 800; line-height: 1; color: var(--text);
-  font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 6px;
+  font-size: 1.35rem; font-weight: 800; line-height: 1; color: var(--text);
+  font-variant-numeric: tabular-nums; display: inline-flex; align-items: baseline; gap: 5px;
 }
-.metric-value.expression-value { font-size: 1.3rem; text-transform: capitalize; }
-.metric-unit { font-size: 0.72rem; font-weight: 500; color: var(--muted); letter-spacing: 0.02em; }
-.metric-spark { height: 64px; display: flex; align-items: center; }
+.metric-value.expression-value { font-size: 1.1rem; text-transform: capitalize; }
+.metric-unit { font-size: 0.68rem; font-weight: 500; color: var(--muted); letter-spacing: 0.02em; }
+.metric-spark { height: 120px; display: flex; align-items: center; }
 .metric-empty { width: 100%; text-align: center; }
-.expression-conf { flex-direction: column; align-items: stretch; gap: 5px; justify-content: center; }
-.metric-explain { margin: 0; line-height: 1.45; }
+.expression-conf { flex-direction: column; align-items: stretch; gap: 6px; justify-content: center; }
+.metric-explain { margin: 2px 0 0; line-height: 1.4; opacity: 0.85; }
+
+/* Experimental fused "enjoyment" — prominent, full-width hero card */
+.enjoyment-card {
+  margin: 8px 0 4px;
+  background: linear-gradient(180deg, rgba(255, 180, 84, 0.06), rgba(255, 110, 199, 0.03));
+  border-color: rgba(255, 180, 84, 0.25);
+}
+.enjoyment-card .metric-value { font-size: 2rem; }
+.enjoyment-spark { height: 170px; }
+.tag-exp {
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #ffb454; border: 1px solid rgba(255, 180, 84, 0.4); border-radius: 999px;
+  padding: 1px 7px; margin-left: 6px; vertical-align: middle;
+}
 
 .metrics-explainer {
   margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--border);

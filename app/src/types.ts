@@ -32,6 +32,7 @@ export type MuseStatus =
       preview?: boolean;
       lastRatio?: number | null;
       bands?: Record<string, number> | null;
+      movement?: number | null;
       posted?: number;
     }
   | { state: "error"; message: string };

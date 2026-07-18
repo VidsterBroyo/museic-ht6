@@ -67,6 +67,29 @@ POST_EVERY_S = 5        # batch readings before posting
 ALPHA_BAND = (8.0, 12.0)
 BETA_BAND = (13.0, 30.0)
 
+# Motion sensors (Muse 2 IMU). Accelerometer (g) + gyroscope (deg/s), ~52 Hz,
+# 3 axes each. Used to detect head-bopping / groove -- something the camera's
+# lower-body micromotion can't see. Scales map "typical active motion" -> 1.0
+# and are deliberately generous; tune if movement pins high or stays flat.
+MOTION_WINDOW_S = 1.0
+MOTION_STALE_S = 2.0    # no new IMU samples for this long -> movement is stale
+ACC_MOVE_SCALE = 0.35   # g of AC (gravity-removed) acceleration -> full scale
+GYRO_MOVE_SCALE = 60.0  # deg/s of rotation -> full scale
+
+
+def movement_intensity(acc: np.ndarray | None, gyro: np.ndarray | None) -> float | None:
+    """0..1 head-motion score. Takes the stronger of translation (accel, DC/gravity
+    removed) and rotation (gyro). Either a head-bop or a head-nod registers."""
+    parts: list[float] = []
+    if acc is not None and acc.shape[0] >= 8:
+        ac = acc - acc.mean(axis=0)  # strip gravity + static tilt
+        rms = float(np.sqrt(np.mean(np.sum(ac ** 2, axis=1))))
+        parts.append(min(1.0, rms / ACC_MOVE_SCALE))
+    if gyro is not None and gyro.shape[0] >= 8:
+        rms_g = float(np.sqrt(np.mean(np.sum(gyro ** 2, axis=1))))
+        parts.append(min(1.0, rms_g / GYRO_MOVE_SCALE))
+    return round(max(parts), 4) if parts else None
+
 
 def band_power(freqs: np.ndarray, psd: np.ndarray, band: tuple[float, float]) -> float:
     mask = (freqs >= band[0]) & (freqs <= band[1])
@@ -169,16 +192,30 @@ def post_batch(backend: str, token: str, song_id: str, readings: list[dict]) -> 
         emit_status("error", message=f"backend unreachable: {exc}")
 
 
+def _try_inlet(stream_type: str):
+    """Resolve one optional LSL stream by type (short timeout). None if absent."""
+    from pylsl import StreamInlet, resolve_byprop
+
+    streams = resolve_byprop("type", stream_type, timeout=3)
+    if not streams:
+        print(f"note: no {stream_type} stream (motion data unavailable)")
+        return None
+    print(f"{stream_type} stream connected")
+    return StreamInlet(streams[0], max_chunklen=64)
+
+
 def connect_lsl(address: str | None):
-    """Resolve an LSL EEG stream; if none, spawn `muselsl stream` and retry."""
+    """Resolve the Muse LSL streams. EEG is required; ACC/GYRO (motion) are
+    best-effort. Returns (eeg_inlet, acc_inlet, gyro_inlet)."""
     from pylsl import StreamInlet, resolve_byprop
 
     emit_status("connecting")
     print("looking for an LSL EEG stream ...")
     streams = resolve_byprop("type", "EEG", timeout=5)
     if not streams:
-        print("none found -- launching `muselsl stream` (BLE connect, can take ~20 s)")
-        cmd = [sys.executable, "-m", "muselsl", "stream"]
+        print("none found -- launching `muselsl stream` with motion (BLE connect, ~20 s)")
+        # --acc/--gyro add the IMU streams (head motion / groove).
+        cmd = [sys.executable, "-m", "muselsl", "stream", "--acc", "--gyro"]
         if address:
             cmd += ["--address", address]
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -193,15 +230,26 @@ def connect_lsl(address: str | None):
             emit_status("error", message="no Muse EEG stream found (is the headband on and in range?)")
             sys.exit(1)
     print("EEG stream connected")
-    return StreamInlet(streams[0], max_chunklen=64)
+    eeg = StreamInlet(streams[0], max_chunklen=64)
+    acc, gyro = _try_inlet("ACC"), _try_inlet("GYRO")
+    if acc is None and gyro is None:
+        print("!! No motion (ACC/GYRO) stream -- head-movement will be unavailable.")
+        print("   A motion-less `muselsl stream` is likely already running from an")
+        print("   older launch. Kill it and reconnect:  pkill -f 'muselsl stream'")
+    return eeg, acc, gyro
 
 
 def run(backend: str, token: str | None, cli_song_id: str | None, address: str | None,
         simulate: bool) -> None:
     buf: list[list[float]] = []  # rolling raw samples, 4 channels
+    acc_buf: list[list[float]] = []   # rolling accelerometer (x,y,z)
+    gyro_buf: list[list[float]] = []  # rolling gyroscope (x,y,z)
     pending: list[dict] = []
     current_song: str | None = None
-    inlet = None if simulate else connect_lsl(address)
+    inlet = acc_inlet = gyro_inlet = None
+    if not simulate:
+        inlet, acc_inlet, gyro_inlet = connect_lsl(address)
+    sim_move = 0.15  # latent movement for --simulate
 
     # No token -> "preview" mode: still connect and compute band power so the
     # headband can be verified and its live signal shown, but nothing is posted
@@ -213,6 +261,7 @@ def run(backend: str, token: str | None, cli_song_id: str | None, address: str |
     last_song_t = -1             # song-offset second of the last posted reading
     last_ratio: float | None = None
     last_data_ts = time.time()   # wall-clock of the last real EEG samples received
+    last_motion_ts = time.time() # wall-clock of the last real IMU samples received
     while True:
         if simulate:
             time.sleep(1.0 / 32)
@@ -234,6 +283,28 @@ def run(backend: str, token: str | None, cli_song_id: str | None, address: str |
         if len(buf) > max_len:
             del buf[: len(buf) - max_len]
 
+        # Motion sensors: pull non-blocking (never stall the EEG loop) and keep a
+        # short rolling window. Absent on older muselsl / plain streams -> skipped.
+        got_motion = False
+        for inl, mbuf in ((acc_inlet, acc_buf), (gyro_inlet, gyro_buf)):
+            if inl is None:
+                continue
+            chunk, _ = inl.pull_chunk(timeout=0.0, max_samples=64)
+            if chunk:
+                got_motion = True
+            for sample in chunk:
+                mbuf.append(sample[:3])
+            motion_max = int(52 * MOTION_WINDOW_S)
+            if len(mbuf) > motion_max:
+                del mbuf[: len(mbuf) - motion_max]
+        # Expire stale motion: if the IMU stops delivering, drop the old samples so
+        # movement reports "no data" instead of freezing on a constant forever.
+        if got_motion:
+            last_motion_ts = time.time()
+        elif time.time() - last_motion_ts > MOTION_STALE_S:
+            acc_buf.clear()
+            gyro_buf.clear()
+
         # 1) Live signal for the UI: compute band power once per wall-clock
         # second and emit it ALWAYS -- regardless of login or whether a song is
         # playing. This is what drives the Signals dashboard; without it a
@@ -243,13 +314,24 @@ def run(backend: str, token: str | None, cli_song_id: str | None, address: str |
             window = np.asarray(buf, dtype=float)
             ratio = alpha_beta_ratio(window)
             bands = band_powers(window)
+            movement = movement_intensity(
+                np.asarray(acc_buf, dtype=float) if acc_buf else None,
+                np.asarray(gyro_buf, dtype=float) if gyro_buf else None,
+            )
             if simulate:
                 ratio = float(np.clip(np.random.lognormal(mean=0.0, sigma=0.4), 0.2, 4.0))
                 bands = _sim_band_powers()
+                sim_move = float(np.clip(sim_move + np.random.randn() * 0.12, 0.0, 1.0))
+                movement = round(sim_move, 4)
             if ratio is not None:
-                emit_status("reading", ratio=round(ratio, 4), bands=bands)
+                emit_status("reading", ratio=round(ratio, 4), bands=bands, movement=movement)
                 last_reading_sec = now_sec
                 last_ratio = ratio
+                # Motion diagnostic (~every 5 s): confirm the IMU is live and moving.
+                if not simulate and (acc_inlet or gyro_inlet) and now_sec % 5 == 0:
+                    fresh = time.time() - last_motion_ts < MOTION_STALE_S
+                    print(f"[motion] acc={len(acc_buf)} gyro={len(gyro_buf)} "
+                          f"fresh={fresh} move={movement}", file=sys.stderr, flush=True)
 
         # 2) Preview mode (no token): never post to the backend.
         if preview:
