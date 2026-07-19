@@ -71,6 +71,8 @@ sensor feed so the rest of the pipeline stays testable end-to-end.
 
 See `SETUP.md` (c) for the Muse companion service and packaged-build steps.
 
+<br>
+
 ## Architecture
 
 Museic is built around an offline-prepared song library, a live biometric reaction loop, and
@@ -159,6 +161,8 @@ The recommendation path is deliberately staged:
    curve from a song's per-second feature curve. That can be a real trained model demo, but it
    should stay an optional side signal rather than replacing the stable recommender, because the
    event dataset will be small.
+
+<br>
 
 ## Repo layout
 
