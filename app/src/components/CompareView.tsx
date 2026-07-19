@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -12,6 +12,13 @@ import {
 import { api } from "../api";
 import type { CompareResponse } from "../types";
 import { StyleInjector } from "./StyleInjector";
+
+interface SavedFriend {
+  id: string;
+  name: string;
+}
+
+const friendStorageKey = (selfId: string) => `museic.compare.friends.${selfId}`;
 
 function CopyIdButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -44,19 +51,71 @@ function CopyIdButton({ text }: { text: string }) {
  * the same songs (side-by-side on one laptop, logged in as different Auth0
  * users), then this joins their curves on shared songs. */
 export default function CompareView({ selfId }: { selfId: string }) {
-  const [otherId, setOtherId] = useState("");
+  const [friends, setFriends] = useState<SavedFriend[]>([]);
+  const [friendName, setFriendName] = useState("");
+  const [friendId, setFriendId] = useState("");
+  const [selectedFriendId, setSelectedFriendId] = useState("");
   const [data, setData] = useState<CompareResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(friendStorageKey(selfId));
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as SavedFriend[];
+      const valid = parsed.filter((f) => f.id && f.name);
+      setFriends(valid);
+      setSelectedFriendId((current) => current || valid[0]?.id || "");
+    } catch {
+      /* saved friends are optional */
+    }
+  }, [selfId]);
+
+  useEffect(() => {
+    window.localStorage.setItem(friendStorageKey(selfId), JSON.stringify(friends));
+  }, [friends, selfId]);
+
+  const selectedFriend = useMemo(
+    () => friends.find((friend) => friend.id === selectedFriendId) ?? null,
+    [friends, selectedFriendId],
+  );
+
+  const saveFriend = () => {
+    const id = friendId.trim();
+    if (!id) return;
+    const name = friendName.trim() || id;
+    setFriends((prev) => {
+      const next = prev.filter((friend) => friend.id !== id);
+      return [...next, { id, name }].sort((a, b) => a.name.localeCompare(b.name));
+    });
+    setSelectedFriendId(id);
+    setFriendName("");
+    setFriendId("");
+    setData(null);
+    setError(null);
+  };
+
+  const removeFriend = (id: string) => {
+    setFriends((prev) => prev.filter((friend) => friend.id !== id));
+    setSelectedFriendId((current) => {
+      if (current !== id) return current;
+      const remaining = friends.filter((friend) => friend.id !== id);
+      return remaining[0]?.id ?? "";
+    });
+    setData(null);
+    setError(null);
+  };
+
   const run = async () => {
+    if (!selectedFriend) return;
     setError(null);
     setData(null);
     setLoading(true);
     try {
       setData(
         await api<CompareResponse>(
-          `/compare/${encodeURIComponent(selfId)}/${encodeURIComponent(otherId.trim())}`,
+          `/compare/${encodeURIComponent(selfId)}/${encodeURIComponent(selectedFriend.id)}`,
         ),
       );
     } catch (e) {
@@ -67,39 +126,115 @@ export default function CompareView({ selfId }: { selfId: string }) {
   };
 
   return (
-    <div className="pad">
+    <div className="pad compare-page">
       <StyleInjector />
-      <h1>Compare with friends</h1>
-      <p className="muted small">
-        You are <code>{selfId}</code> <CopyIdButton text={selfId} />. Paste in your friend's user id.
-      </p>
-      <div className="row">
-        <input
-          value={otherId}
-          onChange={(e) => setOtherId(e.target.value)}
-          placeholder="User ID"
-          spellCheck={false}
-        />
-        <button className="primary" disabled={!otherId.trim() || loading} onClick={() => void run()}>
-          {loading ? "comparing…" : "Compare"}
+      <div className="compare-head">
+        <div>
+          <h1>Compare with friends</h1>
+          <p className="muted small">
+            You are <code>{selfId}</code> <CopyIdButton text={selfId} />.
+          </p>
+        </div>
+        <button className="primary" disabled={!selectedFriend || loading} onClick={() => void run()}>
+          {loading ? "Comparing..." : selectedFriend ? `Compare ${selectedFriend.name}` : "Select a friend"}
         </button>
       </div>
+
+      <div className="compare-grid">
+        <section className="compare-panel">
+          <h2>Saved friends</h2>
+          <div className="friend-list">
+            {friends.length === 0 ? (
+              <p className="muted small compare-empty">No friends saved yet.</p>
+            ) : (
+              friends.map((friend) => (
+                <button
+                  key={friend.id}
+                  type="button"
+                  className={`friend-row ${friend.id === selectedFriendId ? "selected" : ""}`}
+                  onClick={() => {
+                    setSelectedFriendId(friend.id);
+                    setData(null);
+                    setError(null);
+                  }}
+                >
+                  <span>
+                    <strong>{friend.name}</strong>
+                    <small>{friend.id}</small>
+                  </span>
+                  <span className="friend-row-check">{friend.id === selectedFriendId ? "Selected" : "Select"}</span>
+                </button>
+              ))
+            )}
+          </div>
+          {selectedFriend && (
+            <button type="button" className="ghost compare-remove" onClick={() => removeFriend(selectedFriend.id)}>
+              Remove selected
+            </button>
+          )}
+        </section>
+
+        <section className="compare-panel">
+          <h2>Add friend</h2>
+          <div className="compare-form">
+            <input
+              value={friendName}
+              onChange={(e) => setFriendName(e.target.value)}
+              placeholder="Friend name"
+              spellCheck={false}
+            />
+            <input
+              value={friendId}
+              onChange={(e) => setFriendId(e.target.value)}
+              placeholder="Friend user ID"
+              spellCheck={false}
+            />
+            <button className="primary" disabled={!friendId.trim()} onClick={saveFriend}>
+              Save friend
+            </button>
+          </div>
+        </section>
+      </div>
+
       {error && <p className="error">{error}</p>}
+      {!loading && !error && !data && (
+        <div className="compare-results-empty">
+          <h2>Select a friend</h2>
+          <p className="muted">
+            Choose a saved friend and click Compare to see your compatibility score, conclusions,
+            and song-by-song reaction graphs.
+          </p>
+        </div>
+      )}
       {data && data.compatibility === null && (
-        <p className="muted">No comparable data yet — {data.reason ?? "react to the same songs first."}</p>
+        <p className="muted compare-result-note">
+          No comparable data with {selectedFriend?.name ?? "this friend"} yet — {data.reason ?? "react to the same songs first."}
+        </p>
       )}
       {data && data.compatibility !== null && (
         <>
           <div className="compat-score">
             <span className="big-number">{Math.round(data.compatibility * 100)}%</span>
-            <span className="muted"> music compatibility over {data.shared_songs.length} shared song(s)</span>
+            <span className="muted">
+              {" "}
+              with {selectedFriend?.name ?? "friend"} over {data.shared_songs.length} shared song(s)
+            </span>
           </div>
+          <p className="compare-explainer muted">
+            The compatibility score compares how similarly your bodies reacted to the same songs.
+            Each chart shows arousal over time: higher values mean a stronger physiological reaction
+            at that second of the track.
+          </p>
           {data.shared_songs.map((s) => (
             <div key={s.song_id} className="chart-box">
               <h3>
                 {s.title ?? s.song_id} <span className="muted">— {s.artist ?? ""}</span>{" "}
                 {s.score !== null && <span className="tag">{Math.round(s.score * 100)}%</span>}
               </h3>
+              <p className="compare-chart-note muted small">
+                X-axis is song time in seconds. Y-axis is normalized arousal from 0 to 1.
+                The blue line is you; the pink line is {selectedFriend?.name ?? "your friend"}.
+              </p>
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={s.points} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                   <CartesianGrid stroke="rgba(143, 143, 157, 0.28)" strokeDasharray="3 3" />
