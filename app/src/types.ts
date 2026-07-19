@@ -1,12 +1,14 @@
+export interface RawSensorData {
+  hr_bpm: number | null;
+  hrv_rmssd: number | null;
+  stress_index: number | null;
+  expression: string | null;
+  expression_confidence: number | null;
+  alpha_beta_ratio: number | null;
+}
+
 export interface SensorReading {
-  raw: {
-    hr_bpm: number | null;
-    hrv_rmssd: number | null;
-    stress_index: number | null;
-    expression: string | null;
-    expression_confidence: number | null;
-    alpha_beta_ratio: null;
-  };
+  raw: RawSensorData;
   movement_intensity: number | null;
   simulated: boolean;
 }

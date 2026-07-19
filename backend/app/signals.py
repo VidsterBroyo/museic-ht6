@@ -17,7 +17,7 @@ Emotion-quadrant bucketing (§5) falls straight out of arousal x valence here.
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Optional
 
 # Valence mapping: highest-confidence expression category (§5).
 EXPRESSION_VALENCE: dict[str, float] = {
@@ -54,8 +54,8 @@ def derive_valence(raw: dict[str, Any]) -> float:
 
 
 def _expression_transition_intensity(
-    raw: dict[str, Any], prev_raw: dict[str, Any] | None
-) -> float | None:
+    raw: dict[str, Any], prev_raw: Optional[dict[str, Any]]
+) -> Optional[float]:
     """Low-lag arousal component: how sharply the expression state just moved."""
     expr = raw.get("expression")
     if expr is None:
@@ -73,7 +73,7 @@ def _expression_transition_intensity(
     return _clip01(abs(conf - prev_conf) * 0.8)
 
 
-def _muse_component(raw: dict[str, Any]) -> float | None:
+def _muse_component(raw: dict[str, Any]) -> Optional[float]:
     """Muse alpha/beta band power (2-4 s window): fast tier. `alpha_beta_ratio`
     is alpha power / beta power; low alpha relative to beta => engaged/aroused."""
     ratio = raw.get("alpha_beta_ratio")
@@ -89,7 +89,7 @@ def _muse_component(raw: dict[str, Any]) -> float | None:
     return _clip01(1.0 / (1.0 + r))
 
 
-def _slow_trend(raw: dict[str, Any], session_hr_baseline: float | None) -> float | None:
+def _slow_trend(raw: dict[str, Any], session_hr_baseline: Optional[float]) -> Optional[float]:
     """Corroborating slow trend from pulse rate + HRV/stress index. Continuous
     across the whole session (cardio state is not song-specific, §5)."""
     parts: list[tuple[float, float]] = []  # (value, weight)
@@ -118,9 +118,9 @@ def _slow_trend(raw: dict[str, Any], session_hr_baseline: float | None) -> float
 
 def derive_arousal(
     raw: dict[str, Any],
-    prev_raw: dict[str, Any] | None,
-    movement_intensity: float | None,
-    session_hr_baseline: float | None,
+    prev_raw: Optional[dict[str, Any]],
+    movement_intensity: Optional[float],
+    session_hr_baseline: Optional[float],
 ) -> float:
     """Blend fast components (primary) with the slow trend (corroborating)."""
     fast_parts: list[tuple[float, float]] = []
@@ -160,7 +160,7 @@ def quadrant(arousal: float, valence: float) -> str:
 
 
 def annotate_batch(
-    readings: list[dict[str, Any]], session_hr_baseline: float | None
+    readings: list[dict[str, Any]], session_hr_baseline: Optional[float]
 ) -> list[dict[str, Any]]:
     """Compute arousal/valence/quadrant for a time-ordered batch of readings.
 
@@ -168,7 +168,7 @@ def annotate_batch(
     Mutates and returns the list.
     """
     ordered = sorted(readings, key=lambda r: r.get("t", 0))
-    prev_raw: dict[str, Any] | None = None
+    prev_raw: Optional[dict[str, Any]] = None
     for r in ordered:
         raw = r.get("raw") or {}
         valence = derive_valence(raw)

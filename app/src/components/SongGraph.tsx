@@ -9,16 +9,28 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Song, SongGraphPoint } from "../types";
+import type { GraphPoint, SongGraphResponse } from "../types";
 
 /** The per-song "graph of emotion overlaid on the music" (RFC §6 song-graph),
  * now rendered in real-time inside the feed. */
-export default function SongGraph({ song, points }: { song: Song; points: SongGraphPoint[] }) {
+export default function SongGraph({
+  song,
+  points,
+}: {
+  song: SongGraphResponse["song"];
+  points: GraphPoint[];
+}) {
   return (
     <ResponsiveContainer width="100%" height={360}>
       <LineChart data={points} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
         <CartesianGrid stroke="#2a2a35" strokeDasharray="3 3" />
-        <XAxis dataKey="t" stroke="#888" label={{ value: "seconds", position: "insideBottomRight", offset: -4 }} />
+        <XAxis
+          type="number"
+          dataKey="t"
+          domain={[0, song.duration_s ?? "auto"]}
+          stroke="#888"
+          label={{ value: "seconds elapsed", position: "insideBottomRight", offset: -10 }}
+        />
         <YAxis domain={[-1, 1]} stroke="#888" />
         {song.sections?.map((s) =>
           s.label === "high" ? (

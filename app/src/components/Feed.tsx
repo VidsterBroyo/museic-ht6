@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, audioUrl } from "../api";
 import { setEnjoymentMood } from "../enjoyment";
 import { annotatePoint } from "./signals";
-import type { SensorReading, Song, SongGraphPoint, SongGraphResponse } from "../types";
+import type { GraphPoint, SensorReading, Song, SongGraphResponse } from "../types";
 import { StyleInjector } from "./StyleInjector";
 import SongGraph from "./SongGraph";
 
@@ -30,6 +30,7 @@ export default function Feed({ userId }: { userId: string }) {
   const [captureMode, setCaptureMode] = useState<"presage" | "simulated" | null>(null);
   const [lastReading, setLastReading] = useState<SensorReading | null>(null);
   const [graphData, setGraphData] = useState<SongGraphResponse | null>(null);
+  const [visibleSongId, setVisibleSongId] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bufferRef = useRef<BufferedReading[]>([]);
@@ -37,9 +38,12 @@ export default function Feed({ userId }: { userId: string }) {
   const lastReadingRef = useRef<SensorReading | null>(null);
 
   useEffect(() => {
-    api<Song[]>("/songs")
-      .then(setSongs)
-      .catch((e) => setError(String(e)));
+    api<Song[]>("/songs").then((s) => {
+      setSongs(s);
+      if (s.length > 0) {
+        setVisibleSongId(s[0].song_id); // Set initial song
+      }
+    }).catch((e) => setError(String(e)));
   }, []);
 
   const flush = useCallback(async (songId: string | null) => {
@@ -77,12 +81,16 @@ export default function Feed({ userId }: { userId: string }) {
         }
 
         const newAnnotation = annotatePoint(reading, prevReading);
-        const fullPoint: SongGraphPoint = {
+        // Feature curves aren't sent to the client, but the pre-fetched
+        // /song-graph points already carry per-second energy/brightness/onset.
+        const existing = prevData.points.find((p) => p.t === t);
+        const fullPoint: GraphPoint = {
           t,
           ...newAnnotation,
-          energy: prevData.song.features?.energy_curve?.[t] ?? null,
-          brightness: prevData.song.features?.spectral_brightness_curve?.[t] ?? null,
-          onset_density: prevData.song.features?.onset_density_curve?.[t] ?? null,
+          muse: existing?.muse ?? null,
+          energy: existing?.energy ?? null,
+          brightness: existing?.brightness ?? null,
+          onset_density: existing?.onset_density ?? null,
         };
 
         return { ...prevData, points: [...prevData.points, fullPoint] };
@@ -97,7 +105,7 @@ export default function Feed({ userId }: { userId: string }) {
         movement_intensity: reading.movement_intensity,
       });
     });
-  }, [graphData]);
+  }, []);
 
   // Periodic flush while playing.
   useEffect(() => {
@@ -114,6 +122,44 @@ export default function Feed({ userId }: { userId: string }) {
       setEnjoymentMood(null);
     };
   }, [flush]);
+
+  // Observe which song is in the viewport to show its graph.
+  useEffect(() => {
+    if (!songs) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const intersectingEntry = entries.find((e) => e.isIntersecting);
+        if (intersectingEntry) {
+          const songId = (intersectingEntry.target as HTMLElement).dataset.songId;
+          if (songId) {
+            setVisibleSongId(songId);
+          }
+        }
+      },
+      { root: document.querySelector(".feed"), threshold: 0.75 },
+    );
+
+    const feedEl = document.querySelector(".feed");
+    if (feedEl) {
+      Array.from(feedEl.children).forEach((card) => observer.observe(card));
+    }
+    return () => observer.disconnect();
+  }, [songs]);
+
+  // Load graph data for the visible song.
+  useEffect(() => {
+    if (!visibleSongId || graphData?.song.song_id === visibleSongId) return;
+
+    const song = songs?.find((s) => s.song_id === visibleSongId);
+    if (!song) return;
+
+    setGraphData({ song, points: [] }); // Show empty graph immediately.
+    api<SongGraphResponse>(`/song-graph/${userId}/${visibleSongId}`)
+      .then((data) => setGraphData(data))
+      .catch(() => console.log(`No prior graph data for ${visibleSongId}`));
+
+  }, [visibleSongId, userId, songs, graphData]);
 
   const stopCurrent = useCallback(async () => {
     const audio = audioRef.current;
@@ -132,20 +178,12 @@ export default function Feed({ userId }: { userId: string }) {
         return;
       }
       await flush(currentRef.current);
-      setGraphData({ song, points: [] }); // Show graph box immediately
+      setGraphData({ song: { ...song, sections: [] }, points: [] }); // Show graph box immediately
 
       const audio = audioRef.current;
       if (!audio) return;
       try {
         audio.src = await audioUrl(song.song_id);
-        // Pre-fetch existing graph data to append to.
-        try {
-          const initialGraphData = await api<SongGraphResponse>(`/song-graph/${userId}/${song.song_id}`);
-          setGraphData(initialGraphData);
-        } catch (e) {
-          // 404 is fine, means no data yet.
-          console.log(`No prior graph data for ${song.song_id}`);
-        }
         await audio.play();
       } catch (e) {
         setError(`audio playback failed: ${String(e)}`);
@@ -160,7 +198,7 @@ export default function Feed({ userId }: { userId: string }) {
         setCaptureMode(mode);
       }
     },
-    [captureMode, flush, stopCurrent, userId],
+    [captureMode, flush, stopCurrent],
   );
 
   if (error) return <div className="pad error">{error}</div>;
@@ -195,7 +233,16 @@ export default function Feed({ userId }: { userId: string }) {
         {songs.map((song) => {
           const isPlaying = current === song.song_id;
           return (
-            <section key={song.song_id} className={`song-card ${isPlaying ? "playing" : ""}`}>
+            <section key={song.song_id} data-song-id={song.song_id} className={`song-card ${isPlaying ? "playing" : ""}`}>
+              <div className="song-album-art">
+                {song.album_art_b64 ? (
+                  <img src={`data:image/jpeg;base64,${song.album_art_b64}`} alt={`Album art for ${song.title}`} />
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                  </svg>
+                )}
+              </div>
               <div className="song-meta">
                 <h2 className="song-title">{song.title}</h2>
                 <p className="song-artist">{song.artist || "unknown artist"}</p>
@@ -212,11 +259,6 @@ export default function Feed({ userId }: { userId: string }) {
                     ))}
                   </div>
                 )}
-              </div>
-              <div className="song-album-art">
-                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-                </svg>
               </div>
               <div className="song-actions">
                 <button className="play-button" onClick={() => void play(song)}>
