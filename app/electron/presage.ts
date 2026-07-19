@@ -100,6 +100,13 @@ export async function stopCaptureAsync(): Promise<void> {
     } catch (err) {
       console.error("Presage SDK stop failed", err);
     }
+    // On Windows the camera driver (DirectShow / Media Foundation) needs time
+    // to drain in-flight frames after stop() before destroy() is safe to call.
+    // Without this settle window the native teardown races with background
+    // threads and can EXCEPTION_ACCESS_VIOLATION the main process (whole-app crash).
+    if (process.platform === "win32") {
+      await new Promise<void>((resolve) => setTimeout(resolve, 150));
+    }
     destroying = sdk.destroy().catch((err) => console.error("Presage SDK destroy failed", err));
   }
   lastValidationKey = "";
