@@ -10,6 +10,11 @@ import { EXPRESSION_VALENCE, createEnjoymentScorer, getEnjoymentMood, type Enjoy
  * facial expression. Muse EEG: alpha/beta ratio + the five band powers.
  */
 
+// Windows uses exclusive camera access — a second getUserMedia() while Presage
+// holds the camera fails/deadlocks, and releasing it concurrently during SDK
+// teardown can crash the renderer.  Block the preview on Windows entirely.
+const IS_WINDOWS = /Windows/i.test(navigator.userAgent);
+
 const WINDOW = 240; // samples kept (~4 min at 1 Hz)
 
 interface Sample {
@@ -261,7 +266,9 @@ export default function MetricsView({ active = true }: { active?: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (!(active && showPreview && cameraMode !== null)) {
+    // Never open a second camera handle on Windows — exclusive access + concurrent
+    // teardown with the Presage SDK can crash the renderer or main process.
+    if (!(active && showPreview && cameraMode !== null) || IS_WINDOWS) {
       stopFeed();
       return;
     }
@@ -327,13 +334,17 @@ export default function MetricsView({ active = true }: { active?: boolean }) {
         <MuseControl />
         <label
           className="muse-sim"
-          title="Opens the webcam a second time for a self-view. Can crash Electron on some Macs — leave off unless you need it."
+          title={
+            IS_WINDOWS
+              ? "Camera preview is unavailable on Windows — the Presage SDK holds the camera exclusively and a second open can crash the app."
+              : "Opens the webcam a second time for a self-view. Can crash Electron on some Macs — leave off unless you need it."
+          }
         >
           <input
             type="checkbox"
             checked={showPreview}
             onChange={(e) => setShowPreview(e.target.checked)}
-            disabled={!cameraOn}
+            disabled={!cameraOn || IS_WINDOWS}
           />
           Camera preview
         </label>
