@@ -16,6 +16,7 @@ import numpy as np
 from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pymongo import ReturnDocument
 from pydantic import BaseModel, Field
 
 from . import backboard, config, db, insights, ml_model, recommend, signals, spotify

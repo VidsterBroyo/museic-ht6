@@ -298,6 +298,7 @@ def main() -> int:
             "features": numeric["features"],
             "album_art_b64": art_data[0] if art_data else None,
             "album_art_mime": art_data[1] if art_data else None,
+            "likes": 0,
             # spotify_uri is resolved at export time via search; pre-fill here
             # only if you already know it.
             "spotify_uri": None,
@@ -317,6 +318,8 @@ def main() -> int:
         if not doc.get("album_art_b64") and existing.get("album_art_b64"):
             doc["album_art_b64"] = existing.get("album_art_b64")
             doc["album_art_mime"] = existing.get("album_art_mime")
+        if existing.get("likes"):
+            doc["likes"] = existing["likes"]
 
         songs.replace_one({"_id": song_id}, doc, upsert=True)
         print(f"    seeded: {numeric['duration_s']}s, "
