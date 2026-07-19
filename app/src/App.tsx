@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { initApi } from "./api";
+import AmbientSoundField from "./components/AmbientSoundField";
 import CompareView from "./components/CompareView";
 import ErrorToast from "./components/ErrorToast";
 import Feed from "./components/Feed";
@@ -49,32 +50,36 @@ export default function App() {
 
   if (!session) {
     return (
-      <div className="center-page">
-        <h1 className="logo">
-          <span className="logo-muse">Muse</span>
-          <span className="logo-ic">ic</span>
-        </h1>
-        <p className="muted">Music your body actually likes.</p>
-        <button className="primary" onClick={() => void window.museic.login()}>
-          Log in with Auth0
-        </button>
-        <p className="muted small">
-          Opens your system browser (Authorization Code + PKCE), then returns here via
-          museic://callback.
-        </p>
-        <div className="prelogin-muse">
-          <MuseControl />
+      <>
+        <AmbientSoundField mode="login" />
+        <div className="center-page">
+          <h1 className="logo">
+            <span className="logo-muse">Muse</span>
+            <span className="logo-ic">ic</span>
+          </h1>
+          <p className="muted">Music your body actually likes.</p>
+          <button className="primary" onClick={() => void window.museic.login()}>
+            Log in with Auth0
+          </button>
           <p className="muted small">
-            No account needed to test your Muse headband — connect for a live signal preview.
+            Opens your system browser (Authorization Code + PKCE), then returns here via
+            museic://callback.
           </p>
+          <div className="prelogin-muse">
+            <MuseControl />
+            <p className="muted small">
+              No account needed to test your Muse headband — connect for a live signal preview.
+            </p>
+          </div>
+          <ErrorToast />
         </div>
-        <ErrorToast />
-      </div>
+      </>
     );
   }
 
   return (
     <div className="app">
+      <AmbientSoundField mode={view.name} />
       <ErrorToast />
       <header className="topbar">
         <span className="logo" onClick={() => setView({ name: "feed" })}>

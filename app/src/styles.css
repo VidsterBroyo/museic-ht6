@@ -58,6 +58,21 @@ svg text,
   font-family: var(--font-sans);
 }
 
+.ambient-sound-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.75;
+  mix-blend-mode: screen;
+}
+
+.app,
+.center-page {
+  position: relative;
+  z-index: 1;
+}
+
 .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 main { flex: 1; min-height: 0; overflow-y: auto; position: relative; }
 /* Keep-alive panels: hide without unmounting (preserves Feed songs cache). */
@@ -69,6 +84,14 @@ main { flex: 1; min-height: 0; overflow-y: auto; position: relative; }
 .center-page {
   height: 100vh; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 14px;
+}
+
+@media (prefers-color-scheme: light) {
+  .ambient-sound-field { opacity: 0.28; mix-blend-mode: multiply; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-sound-field { opacity: 0.45; }
 }
 
 .logo {
