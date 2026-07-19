@@ -4,6 +4,7 @@ import AmbientSoundField from "./components/AmbientSoundField";
 import CompareView from "./components/CompareView";
 import ErrorToast from "./components/ErrorToast";
 import Feed from "./components/Feed";
+import LoadingState from "./components/LoadingState";
 import MetricsView from "./components/MetricsView";
 import MuseControl from "./components/MuseControl";
 import ProfileView from "./components/ProfileView";
@@ -55,7 +56,14 @@ export default function App() {
     return () => window.removeEventListener("click", close);
   }, [menuOpen]);
 
-  if (!ready) return <div className="center-page">loading…</div>;
+  if (!ready) {
+    return (
+      <>
+        <AmbientSoundField mode="login" />
+        <LoadingState title="Loading Museic" variant="app" />
+      </>
+    );
+  }
 
   if (!museic) {
     return (
