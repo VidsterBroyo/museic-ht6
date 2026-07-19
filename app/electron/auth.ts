@@ -321,7 +321,11 @@ async function requestConnect(myAccountToken: string): Promise<void> {
       redirect_uri: REDIRECT_URI,
       code_challenge: challenge,
       code_challenge_method: "S256",
-      scopes: ["openid", "offline_access", ...SPOTIFY_CONNECTION_SCOPE.split(" ")],
+      // Spotify is plain OAuth2 (not OIDC) and issues refresh tokens
+      // automatically, so pass ONLY real Spotify scopes here. Including `openid`
+      // or `offline_access` (from Auth0's generic docs example) makes Spotify
+      // reject the authorize with `error=invalid_scope`.
+      scopes: SPOTIFY_CONNECTION_SCOPE.split(" "),
     }),
   });
   console.log("[connect] connect POST status:", resp.status);

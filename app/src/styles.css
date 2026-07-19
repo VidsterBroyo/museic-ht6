@@ -435,8 +435,11 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .quadrant-frame { position: relative; width: 100%; padding: 20px; }
 .quadrant-grid { position: relative; width: 100%; aspect-ratio: 1 / 1; }
 
+/* Profile-page subheadings ("Emotion quadrants", "Your music DNA", etc.) */
+.profile-view h3 { font-size: 1.5rem; }
+
 .q-axis-label {
-  position: absolute; color: var(--text); font-size: 0.82rem; font-weight: 600;
+  position: absolute; color: var(--text); font-size: 1rem; font-weight: 600;
   white-space: nowrap; pointer-events: none;
 }
 .q-top { top: 2px; left: 50%; transform: translateX(-50%); }

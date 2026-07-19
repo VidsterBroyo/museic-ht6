@@ -158,7 +158,7 @@ export default function ProfileView({ userId }: { userId: string }) {
   const quadrants = Object.entries(profile.quadrant_counts ?? {});
 
   return (
-    <div className="pad">
+    <div className="pad profile-view">
       <StyleInjector />
       <h1>Your music enjoyment profile</h1>
 
