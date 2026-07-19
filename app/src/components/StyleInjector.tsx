@@ -12,15 +12,16 @@ export function StyleInjector() {
 }
 
 :root {
-  --bg-main: #0d0d1a;
-  --bg-card: #1a1a2e;
-  --text-main: #e0e0ff;
-  --text-muted: #8080a0;
-  --accent-pink: #ff00a0;
-  --accent-cyan: #00f5d4;
-  --accent-yellow: #ffee00;
-  --accent-purple: #a100ff;
-  --border-color: #2a2a35;
+  --bg-main: #DCFFFD;
+  --bg-card: #ffffff;
+  --text-main: #24401f;
+  --text-muted: rgba(36, 64, 31, 0.82);
+  --accent-pink: #52FFEE;
+  --accent-cyan: #52FFEE;
+  --accent-yellow: #8a6d13;
+  --accent-purple: #4FB477;
+  --success-green: #4FB477;
+  --border-color: rgba(63, 102, 52, 0.42);
   --font-sans: "Zalando Sans", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
@@ -70,20 +71,21 @@ button {
 
 button:hover {
   border-color: var(--accent-cyan);
-  color: var(--accent-cyan);
+  color: var(--text-main);
+  background-color: rgba(82, 255, 238, 0.18);
 }
 
 button.primary {
   background-color: var(--accent-pink);
   border-color: var(--accent-pink);
-  color: #fff;
-  box-shadow: 0 0 15px -5px var(--accent-pink);
+  color: var(--text-main);
+  box-shadow: none;
 }
 
 button.primary:hover {
-  background-color: #ff33b8;
-  border-color: #ff33b8;
-  color: #fff;
+  background-color: #36ead7;
+  border-color: #36ead7;
+  color: var(--text-main);
 }
 
 button:disabled {
@@ -100,21 +102,21 @@ input[type="text"] {
 }
 
 .tag {
-  background-color: rgba(0, 245, 212, 0.1);
-  color: var(--accent-cyan);
-  border: 1px solid rgba(0, 245, 212, 0.2);
+  background-color: rgba(79, 180, 119, 0.22);
+  color: var(--text-main);
+  border: 1px solid rgba(63, 102, 52, 0.42);
 }
 
 .tag.neg {
-  background-color: rgba(255, 0, 160, 0.1);
-  color: var(--accent-pink);
-  border: 1px solid rgba(255, 0, 160, 0.2);
+  background-color: rgba(163, 66, 79, 0.1);
+  color: #a3424f;
+  border: 1px solid rgba(163, 66, 79, 0.35);
 }
 
 .banner.warn {
-  background-color: #332800;
+  background-color: #fff6d8;
   color: var(--accent-yellow);
-  border-color: var(--accent-yellow);
+  border-color: rgba(138, 109, 19, 0.35);
 }
 
 /* Feed.tsx */
@@ -132,7 +134,7 @@ input[type="text"] {
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0,0,0,0.5);
+  background: rgba(63,102,52,0.86);
   backdrop-filter: blur(5px);
   padding: 6px 12px;
   border-radius: 20px;
@@ -175,7 +177,7 @@ input[type="text"] {
   justify-content: center;
   color: var(--text-muted);
   overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 10px 30px rgba(63, 102, 52, 0.16);
 }
 .song-album-art::after {
   content: '';
@@ -209,13 +211,13 @@ input[type="text"] {
   border-radius: 50%;
   font-size: 24px;
   background-color: var(--accent-pink);
-  color: white;
+  color: var(--text-main);
   border: none;
-  box-shadow: 0 0 20px -5px var(--accent-pink);
+  box-shadow: 0 8px 22px rgba(63, 102, 52, 0.14);
 }
 .song-card.playing .play-button {
-  background-color: var(--accent-cyan);
-  box-shadow: 0 0 20px -5px var(--accent-cyan);
+  background-color: var(--success-green);
+  box-shadow: 0 8px 22px rgba(63, 102, 52, 0.14);
 }
 .song-card.active .song-album-art {
   animation: spin 12s linear infinite;
@@ -249,7 +251,7 @@ input[type="text"] {
   background-color: var(--border-color);
 }
 .quadrant .fill {
-  background: linear-gradient(90deg, var(--accent-purple), var(--accent-pink));
+  background: linear-gradient(90deg, var(--success-green), var(--accent-pink));
 }
 .peaks li {
   background: var(--bg-card);
@@ -268,7 +270,7 @@ input[type="text"] {
   font-size: 5rem;
   font-weight: 700;
   color: var(--accent-cyan);
-  text-shadow: 0 0 25px var(--accent-cyan);
+  text-shadow: none;
 }
 .chart-box {
   background: var(--bg-card);
@@ -288,12 +290,12 @@ input[type="text"] {
   font-size: 0.9rem;
 }
 .muse-pill .muse-toggle {
-  background: rgba(26, 26, 46, 0.7);
+  background: rgba(255, 255, 255, 0.7);
   border: 1px solid var(--border-color);
   border-radius: 999px;
   padding: 8px 16px;
   font-weight: 500;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 20px rgba(63, 102, 52, 0.1);
   transition: all 0.3s ease;
 }
 .muse-pill .muse-toggle:hover {
@@ -301,9 +303,9 @@ input[type="text"] {
   color: var(--accent-cyan);
 }
 .muse-pill.muse-streaming .muse-toggle {
-  border-color: var(--accent-cyan);
-  color: var(--accent-cyan);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 15px -2px var(--accent-cyan);
+  border-color: var(--success-green);
+  color: var(--text-main);
+  box-shadow: 0 4px 20px rgba(63, 102, 52, 0.12);
 }
 .muse-pill .muse-state {
   color: var(--text-muted);

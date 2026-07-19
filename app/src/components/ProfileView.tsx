@@ -20,10 +20,10 @@ const QUADRANT_EMOJI: Record<string, string> = {
 };
 
 const QUADRANT_COLOR: Record<string, string> = {
-  hype: "#ff4d6d",
-  tense: "#a06bff",
-  chill: "#3ea8ff",
-  sad: "#5fd0c0",
+  hype: "#52FFEE",
+  tense: "#2f8f5a",
+  chill: "#4FB477",
+  sad: "#3F6634",
 };
 
 export default function ProfileView({ userId }: { userId: string }) {
@@ -299,8 +299,8 @@ function YouDot(props: unknown) {
   if (cx == null || cy == null) return <g />;
   return (
     <g>
-      <circle cx={cx} cy={cy} r={13} fill="#fff" fillOpacity={0.12} />
-      <circle cx={cx} cy={cy} r={7} fill="#fff" />
+      <circle cx={cx} cy={cy} r={13} fill="#52FFEE" fillOpacity={0.22} />
+      <circle cx={cx} cy={cy} r={7} fill="#52FFEE" />
     </g>
   );
 }

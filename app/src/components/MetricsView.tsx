@@ -122,30 +122,30 @@ interface MetricDef {
 }
 
 const METRICS: MetricDef[] = [
-  { key: "hr_bpm", label: "Heart rate", unit: "bpm", source: "camera", color: "#e66767",
+  { key: "hr_bpm", label: "Heart rate", unit: "bpm", source: "camera", color: "#3F6634",
     domain: [40, 160], format: (v) => `${Math.round(v)}`, explain: "Pulse from facial colour (rPPG)." },
-  { key: "hrv_rmssd", label: "HRV", unit: "ms RMSSD", source: "camera", color: "#199e70",
+  { key: "hrv_rmssd", label: "HRV", unit: "ms RMSSD", source: "camera", color: "#4FB477",
     domain: [0, 120], format: (v) => `${Math.round(v)}`, explain: "Beat-to-beat variability; drops with stress." },
-  { key: "stress_index", label: "Stress", unit: "Baevsky", source: "camera", color: "#c98500",
+  { key: "stress_index", label: "Stress", unit: "Baevsky", source: "camera", color: "#2f8f5a",
     domain: [0, 150], format: (v) => `${Math.round(v)}`, explain: "HRV-based load. ~50 typical, 100+ high." },
-  { key: "alpha_beta_ratio", label: "Alpha / Beta ratio", unit: "ratio", source: "muse", color: "#c98500",
+  { key: "alpha_beta_ratio", label: "Alpha / Beta ratio", unit: "ratio", source: "muse", color: "#2f8f5a",
     domain: [0, 3], format: (v) => v.toFixed(2), explain: "Low = engaged, high = relaxed. Feeds arousal." },
-  { key: "delta", label: "Delta", unit: "1–4 Hz", source: "muse", color: "#3987e5",
+  { key: "delta", label: "Delta", unit: "1–4 Hz", source: "muse", color: "#12cbbb",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Deep sleep / very drowsy." },
-  { key: "theta", label: "Theta", unit: "4–8 Hz", source: "muse", color: "#199e70",
+  { key: "theta", label: "Theta", unit: "4–8 Hz", source: "muse", color: "#4FB477",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Drowsy, meditative, daydreaming." },
-  { key: "alpha", label: "Alpha", unit: "8–12 Hz", source: "muse", color: "#9085e9",
+  { key: "alpha", label: "Alpha", unit: "8–12 Hz", source: "muse", color: "#52FFEE",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Relaxed but awake, calm focus." },
-  { key: "beta", label: "Beta", unit: "13–30 Hz", source: "muse", color: "#d55181",
+  { key: "beta", label: "Beta", unit: "13–30 Hz", source: "muse", color: "#3F6634",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Alert, engaged, concentrating." },
-  { key: "gamma", label: "Gamma", unit: "30–44 Hz", source: "muse", color: "#e66767",
+  { key: "gamma", label: "Gamma", unit: "30–44 Hz", source: "muse", color: "#2f8f5a",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Fast; perception. Noisy on consumer EEG." },
-  { key: "muse_movement", label: "Head movement", unit: "%", source: "muse", color: "#4bc0c0",
+  { key: "muse_movement", label: "Head movement", unit: "%", source: "muse", color: "#12cbbb",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Head-bop / nod from the Muse accelerometer + gyroscope." },
-  { key: "liking", label: "Liking (vs your baseline)", unit: "/100", source: "muse", color: "#7ac74f",
+  { key: "liking", label: "Liking (vs your baseline)", unit: "/100", source: "muse", color: "#4FB477",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}`,
     explain: "Frontal alpha asymmetry, scored against YOUR baseline. 50 = neutral, >50 = approach/liking, <50 = withdrawal. (Raw FAA is anatomy/contact-biased, so absolute sign is meaningless.)" },
-  { key: "frontal_theta", label: "Absorption (frontal θ)", unit: "%", source: "muse", color: "#b06fe0",
+  { key: "frontal_theta", label: "Absorption (frontal theta)", unit: "%", source: "muse", color: "#52FFEE",
     domain: ["auto", "auto"], format: (v) => `${Math.round(v * 100)}%`,
     explain: "Frontal theta (AF7/AF8). Rises with deep emotional absorption / being moved — how sad music is enjoyed." },
 ];
@@ -529,12 +529,12 @@ function EnjoymentCard({ samples, value, parts }: { samples: Sample[]; value: nu
             <AreaChart data={data} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="grad-enjoyment" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#ffb454" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="#ff6ec7" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#52FFEE" stopOpacity={0.45} />
+                  <stop offset="100%" stopColor="#4FB477" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <YAxis domain={[0, 1]} hide />
-              <Area type="monotone" dataKey="v" stroke="#ffb454" strokeWidth={3}
+              <Area type="monotone" dataKey="v" stroke="#4FB477" strokeWidth={3}
                 fill="url(#grad-enjoyment)" dot={false} connectNulls isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
