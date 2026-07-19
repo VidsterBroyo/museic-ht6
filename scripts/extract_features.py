@@ -151,15 +151,23 @@ def heuristic_sections(energy: list[float]) -> list[dict]:
     return sections
 
 
-def extract_album_art(path: Path) -> str | None:
-    """Use TinyTag to pull embedded album art and return it as base64."""
+def extract_album_art(path: Path) -> tuple[str, str] | None:
+    """Use TinyTag to pull embedded album art and return it as a tuple of
+    (base64 data, mime_type)."""
     try:
         from tinytag import TinyTag
 
         tag = TinyTag.get(str(path), image=True)
-        image_bytes = tag.get_image()
+        image_bytes = tag.images.any
         if image_bytes:
-            return base64.b64encode(image_bytes).decode("ascii")
+            # The .any property returns an Image object, not raw bytes.
+            # The raw data is on its .data attribute.
+            image_data = image_bytes.data
+            mime_type = "image/jpeg"  # Default
+            if image_data.startswith(b"\x89PNG\r\n\x1a\n"):
+                mime_type = "image/png"
+            b64_data = base64.b64encode(image_data).decode("ascii")
+            return b64_data, mime_type
     except Exception as e:
         print(f"    ! could not extract album art: {e}")
     return None
@@ -278,7 +286,7 @@ def main() -> int:
 
         print("    librosa: per-second curves ...")
         numeric = per_second_curves(path)
-        art_b64 = extract_album_art(path)
+        art_data = extract_album_art(path)
 
         doc = {
             "_id": song_id,
@@ -288,7 +296,8 @@ def main() -> int:
             "duration_s": numeric["duration_s"],
             "sections": numeric["sections"],
             "features": numeric["features"],
-            "album_art_b64": art_b64,
+            "album_art_b64": art_data[0] if art_data else None,
+            "album_art_mime": art_data[1] if art_data else None,
             # spotify_uri is resolved at export time via search; pre-fill here
             # only if you already know it.
             "spotify_uri": None,
@@ -306,7 +315,8 @@ def main() -> int:
         if existing.get("spotify_uri"):
             doc["spotify_uri"] = existing["spotify_uri"]
         if not doc.get("album_art_b64") and existing.get("album_art_b64"):
-            doc["album_art_b64"] = existing["album_art_b64"]
+            doc["album_art_b64"] = existing.get("album_art_b64")
+            doc["album_art_mime"] = existing.get("album_art_mime")
 
         songs.replace_one({"_id": song_id}, doc, upsert=True)
         print(f"    seeded: {numeric['duration_s']}s, "

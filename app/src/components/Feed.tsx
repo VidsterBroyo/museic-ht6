@@ -29,6 +29,7 @@ export default function Feed({ userId }: { userId: string }) {
   const [current, setCurrent] = useState<string | null>(null);
   const [captureMode, setCaptureMode] = useState<"presage" | "simulated" | null>(null);
   const [lastReading, setLastReading] = useState<SensorReading | null>(null);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [graphData, setGraphData] = useState<SongGraphResponse | null>(null);
   const [visibleSongId, setVisibleSongId] = useState<string | null>(null);
 
@@ -162,8 +163,6 @@ export default function Feed({ userId }: { userId: string }) {
   }, [visibleSongId, userId, songs, graphData]);
 
   const stopCurrent = useCallback(async () => {
-    const audio = audioRef.current;
-    if (audio) audio.pause();
     await flush(currentRef.current);
     currentRef.current = null;
     setCurrent(null);
@@ -174,7 +173,12 @@ export default function Feed({ userId }: { userId: string }) {
   const play = useCallback(
     async (song: Song) => {
       if (currentRef.current === song.song_id) {
-        await stopCurrent();
+        // If it's the current song, toggle play/pause instead of stopping.
+        if (audioRef.current?.paused) {
+          await audioRef.current?.play();
+        } else {
+          audioRef.current?.pause();
+        }
         return;
       }
       await flush(currentRef.current);
@@ -216,7 +220,12 @@ export default function Feed({ userId }: { userId: string }) {
   return (
     <div className="feed-wrap">
       <StyleInjector />
-      <audio ref={audioRef} onEnded={() => void stopCurrent()} />
+      <audio
+        ref={audioRef}
+        onEnded={() => void stopCurrent()}
+        onPlay={() => setIsAudioPlaying(true)}
+        onPause={() => setIsAudioPlaying(false)}
+      />
       {captureMode === "simulated" && (
         <div className="banner warn">
           Sensor data is SIMULATED — wire the Presage SDK to capture real reactions (SETUP.md).
@@ -231,12 +240,13 @@ export default function Feed({ userId }: { userId: string }) {
       )}
       <div className="feed">
         {songs.map((song) => {
-          const isPlaying = current === song.song_id;
+          const isActive = current === song.song_id;
+          const isPlaying = isActive && isAudioPlaying;
           return (
-            <section key={song.song_id} data-song-id={song.song_id} className={`song-card ${isPlaying ? "playing" : ""}`}>
+            <section key={song.song_id} data-song-id={song.song_id} className={`song-card ${isActive ? "active" : ""} ${isPlaying ? "is-playing" : ""}`}>
               <div className="song-album-art">
                 {song.album_art_b64 ? (
-                  <img src={`data:image/jpeg;base64,${song.album_art_b64}`} alt={`Album art for ${song.title}`} />
+                  <img src={`data:${song.album_art_mime || "image/jpeg"};base64,${song.album_art_b64}`} alt={`Album art for ${song.title}`} />
                 ) : (
                   <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
@@ -262,7 +272,7 @@ export default function Feed({ userId }: { userId: string }) {
               </div>
               <div className="song-actions">
                 <button className="play-button" onClick={() => void play(song)}>
-                  {isPlaying ? "■" : "▶"}
+                  {isPlaying ? "❚❚" : "▶"}
                 </button>
               </div>
               <div className="chart-box">

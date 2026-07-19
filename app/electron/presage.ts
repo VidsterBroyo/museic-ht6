@@ -33,13 +33,8 @@ export interface SensorReading {
   simulated: boolean;
 }
 
-export interface ValidationStatus {
-  code: number;
-  hint: string;
-}
-
 type Emit = (reading: SensorReading) => void;
-type EmitValidation = (status: ValidationStatus) => void;
+type StatusEmit = (status: { code: number; hint: string }) => void;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let sdkInstance: SmartSpectraSDK | null = null;
@@ -58,7 +53,7 @@ export function isRunning(): boolean {
 
 export async function startCapture(
   emit: Emit,
-  onValidation?: EmitValidation,
+  onStatus: StatusEmit,
   opts?: { simulate?: boolean },
 ): Promise<{ mode: "presage" | "simulated" }> {
   // Re-entrancy guard: if a start is already in progress, don't spin up a second
@@ -78,7 +73,7 @@ export async function startCapture(
       return { mode: "simulated" };
     }
     if (process.env.PRESAGE_API_KEY) {
-      return startRealCapture(emit, onValidation);
+      return startRealCapture(emit, onStatus);
     }
     console.warn(
       "PRESAGE_API_KEY not set -- using SIMULATED sensor data (see SETUP.md).",
@@ -107,9 +102,40 @@ export function stopCapture(): void {
 // ---------------------------------------------------------------------------
 // Real SDK integration.
 // ---------------------------------------------------------------------------
+
+function startSimulation(emit: Emit): void {
+  let hr = 70;
+  let movement = 0.1;
+  const expressions = ["neutral", "happy", "surprise", "neutral", "neutral"];
+  let exprIndex = 0;
+
+  timer = setInterval(() => {
+    hr += (Math.random() - 0.5) * 2;
+    hr = Math.max(60, Math.min(120, hr));
+    movement += (Math.random() - 0.5) * 0.1;
+    movement = Math.max(0, Math.min(1, movement));
+    if (Math.random() < 0.1) {
+      exprIndex = (exprIndex + 1) % expressions.length;
+    }
+
+    emit({
+      raw: {
+        hr_bpm: Math.round(hr),
+        hrv_rmssd: 40 + (Math.random() - 0.5) * 10,
+        stress_index: 50 + (Math.random() - 0.5) * 20,
+        expression: expressions[exprIndex],
+        expression_confidence: 0.6 + Math.random() * 0.3,
+        alpha_beta_ratio: null,
+      },
+      movement_intensity: movement,
+      simulated: true,
+    });
+  }, 1000);
+}
+
 function startRealCapture(
   emit: Emit,
-  onValidation?: EmitValidation,
+  onStatus: StatusEmit,
 ): { mode: "presage" | "simulated" } {
   try {
     const {
@@ -145,18 +171,18 @@ function startRealCapture(
       }
     });
     sdk.on("validationStatus", (code, _ts, hint) => {
+      onStatus({ code, hint: hint ?? "" });
       if (code !== 0) console.warn("Presage validation:", code, hint);
-      onValidation?.({ code, hint: hint ?? "" });
     });
     sdk.on("error", (code, message, retryable) => {
       console.error("Presage SDK error", code, message, "retryable=", retryable);
-      onValidation?.({ code: code || -1, hint: message ? `Presage error: ${message}` : "Presage SDK error" });
+      onStatus({ code: code || -1, hint: message ? `Presage error: ${message}` : "Presage SDK error" });
     });
 
     sdk.useCamera({
       deviceIndex: Number(process.env.PRESAGE_CAMERA_INDEX ?? 0),
-      width: Number(process.env.PRESAGE_CAMERA_WIDTH ?? 1280),
-      height: Number(process.env.PRESAGE_CAMERA_HEIGHT ?? 720),
+      width: Number(process.env.PRESAGE_CAMERA_WIDTH ?? 640),
+      height: Number(process.env.PRESAGE_CAMERA_HEIGHT ?? 480),
       fps: Number(process.env.PRESAGE_CAMERA_FPS ?? 30),
     });
     sdk.start();
@@ -164,7 +190,7 @@ function startRealCapture(
     return { mode: "presage" };
   } catch (err) {
     console.error("Failed to start Presage SDK -- falling back to simulation.", err);
-    onValidation?.({ code: -1, hint: "Presage SDK failed to start — using simulation." });
+    onStatus({ code: -1, hint: "Presage SDK failed to start — using simulation." });
     startSimulation(emit);
     return { mode: "simulated" };
   }
@@ -241,84 +267,30 @@ function deriveMovementIntensity(
   return Math.round(Math.max(0, Math.min(1, mean)) * 100) / 100;
 }
 
+// This mapping should be verified against the Presage SDK documentation.
+const EXPRESSION_NAMES: Record<number, string> = {
+  0: "neutral",
+  1: "happy",
+  2: "sad",
+  3: "anger",
+  4: "fear",
+  5: "surprise",
+  6: "disgust",
+  7: "contempt",
+};
+
 function pickTopExpression(scores: ExpressionScore[] | null | undefined): {
   name: string;
   confidence: number;
 } | null {
   if (!scores || scores.length === 0) return null;
-  const top = scores.reduce((best, score) => {
-    const confidence = numberOrNull(score.confidence) ?? -1;
-    return confidence > ((numberOrNull(best.confidence) ?? -1)) ? score : best;
-  }, scores[0]);
-  const confidence = numberOrNull(top.confidence);
-  if (confidence === null || confidence < 0) return null;
-  return { name: expressionName(top.type), confidence };
-}
-
-function expressionName(type: number | null | undefined): string {
-  switch (type) {
-    case 1:
-      return "anger";
-    case 2:
-      return "contempt";
-    case 3:
-      return "disgust";
-    case 4:
-      return "fear";
-    case 5:
-      return "happy";
-    case 6:
-      return "neutral";
-    case 7:
-      return "sad";
-    case 8:
-      return "surprise";
-    default:
-      return "neutral";
+  const top = scores.reduce(
+    (best, current) => ((current.confidence ?? 0) > (best.confidence ?? 0) ? current : best),
+    scores[0],
+  );
+  if (top.type === null || top.type === undefined || top.confidence === null || top.confidence === undefined) {
+    return null;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Simulation: plausible 1 Hz physiology so the pipeline is demoable without
-// the SDK. Every reading is flagged simulated: true.
-// ---------------------------------------------------------------------------
-const EXPRESSIONS = ["neutral", "happy", "surprise", "sad", "anger", "disgust", "contempt", "fear"];
-
-function startSimulation(emit: Emit): void {
-  let hr = 68 + Math.random() * 10;
-  let expression = "neutral";
-  let excitement = 0.2; // slow-moving latent state the fake signals follow
-
-  timer = setInterval(() => {
-    // Latent excitement drifts, with occasional spikes (a "drop hit" moment).
-    excitement += (Math.random() - 0.48) * 0.08;
-    if (Math.random() < 0.04) excitement += 0.5;
-    excitement = Math.max(0, Math.min(1, excitement * 0.97));
-
-    hr += (65 + excitement * 25 - hr) * 0.08 + (Math.random() - 0.5) * 1.2;
-
-    if (Math.random() < 0.06 + excitement * 0.2) {
-      expression =
-        excitement > 0.55
-          ? Math.random() < 0.7
-            ? "happy"
-            : "surprise"
-          : EXPRESSIONS[Math.floor(Math.random() * EXPRESSIONS.length)];
-    }
-
-    emit({
-      raw: {
-        hr_bpm: Math.round(hr),
-        hrv_rmssd: Math.round((55 - excitement * 30 + (Math.random() - 0.5) * 6) * 10) / 10,
-        stress_index: Math.round(40 + excitement * 60 + (Math.random() - 0.5) * 8),
-        expression,
-        expression_confidence: Math.round((0.5 + Math.random() * 0.5) * 100) / 100,
-        alpha_beta_ratio: null,
-      },
-      movement_intensity:
-        Math.round(Math.max(0, Math.min(1, excitement * 0.8 + (Math.random() - 0.4) * 0.3)) * 100) /
-        100,
-      simulated: true,
-    });
-  }, 1000);
+  const name = EXPRESSION_NAMES[top.type];
+  return name ? { name, confidence: top.confidence } : null;
 }

@@ -139,6 +139,7 @@ input[type="text"] {
   align-items: center;
   justify-content: center;
   gap: 16px;
+  position: relative; /* For the disc hole */
 }
 .song-card .song-meta {
   text-align: center;
@@ -152,6 +153,7 @@ input[type="text"] {
 .song-album-art {
   width: 240px;
   height: 240px;
+  flex-shrink: 0; /* Prevent oval distortion */
   background: var(--border-color);
   border-radius: 50%;
   display: flex;
@@ -160,6 +162,18 @@ input[type="text"] {
   color: var(--text-muted);
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.song-album-art::after {
+  content: '';
+  position: absolute;
+  width: 25px;
+  height: 25px;
+  background: var(--bg-main);
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
+  /* The parent is a flex container with align/justify center, so this is already centered */
+  z-index: 1; /* Ensure it's on top of the image */
 }
 .song-album-art img {
   width: 100%;
@@ -189,8 +203,12 @@ input[type="text"] {
   background-color: var(--accent-cyan);
   box-shadow: 0 0 20px -5px var(--accent-cyan);
 }
-.song-card.playing .song-album-art {
+.song-card.active .song-album-art {
   animation: spin 12s linear infinite;
+  animation-play-state: paused;
+}
+.song-card.active.is-playing .song-album-art {
+  animation-play-state: running;
 }
 
 /* ProfileView.tsx */
