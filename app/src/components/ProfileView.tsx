@@ -9,7 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api";
-import type { Profile, Recommendation } from "../types";
+import type { Insights, Profile, Recommendation } from "../types";
 import { StyleInjector } from "./StyleInjector";
 
 const QUADRANT_EMOJI: Record<string, string> = {
@@ -114,6 +114,8 @@ export default function ProfileView({ userId }: { userId: string }) {
         </>
       )}
 
+      {profile.insights && <InsightsSection insights={profile.insights} />}
+
       {profile.top_tags && Object.keys(profile.top_tags).length > 0 && (
         <>
           <h3>What your body responds to</h3>
@@ -177,6 +179,105 @@ export default function ProfileView({ userId }: { userId: string }) {
           </ol>
         </>
       )}
+    </div>
+  );
+}
+
+function InsightsSection({ insights }: { insights: Insights }) {
+  const { sonic_signature: sig, top_songs: top, crowd } = insights;
+  const hasCrowd = crowd && crowd.n_listeners >= 3;
+
+  if (!sig && (!top || top.length === 0) && !hasCrowd) return null;
+
+  return (
+    <>
+      <h3>Your music DNA</h3>
+      <div className="dna-grid">
+        {sig && (
+          <div className="dna-card">
+            <div className="dna-card-title">Sonic signature</div>
+            <div className="dna-big">
+              {sig.sweet_spot_bpm} <span className="dna-unit">BPM</span>
+            </div>
+            <div className="muted small">
+              your sweet spot ({sig.tempo_low}–{sig.tempo_high} BPM)
+            </div>
+            {sig.dominant_mode && sig.minor_pct != null && sig.major_pct != null && (
+              <div className="dna-mode">
+                <div className="dna-mode-bar">
+                  <div
+                    className="dna-mode-fill minor"
+                    style={{ width: `${Math.round(sig.minor_pct * 100)}%` }}
+                  />
+                  <div
+                    className="dna-mode-fill major"
+                    style={{ width: `${Math.round(sig.major_pct * 100)}%` }}
+                  />
+                </div>
+                <div className="muted small">
+                  {Math.round((sig.dominant_mode === "minor" ? sig.minor_pct : sig.major_pct) * 100)}%{" "}
+                  {sig.dominant_mode} keys
+                  {sig.top_key ? ` · most often ${sig.top_key}` : ""}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {hasCrowd && crowd && (
+          <div className="dna-card">
+            <div className="dna-card-title">You vs. the crowd</div>
+            <CrowdBar label="Energy" pct={crowd.energy_pct} highWord="more energetic" lowWord="more chill" />
+            <CrowdBar label="Positivity" pct={crowd.positivity_pct} highWord="more upbeat" lowWord="more moody" />
+            <CrowdBar label="Tempo" pct={crowd.tempo_pct} highWord="likes it faster" lowWord="likes it slower" />
+            <div className="muted small">across {crowd.n_listeners} listeners</div>
+          </div>
+        )}
+      </div>
+
+      {top && top.length > 0 && (
+        <>
+          <h3>Top 5 most enjoyed</h3>
+          <ol className="top-songs">
+            {top.map((s) => (
+              <li key={s.song_id}>
+                <span className="top-song-name">
+                  <strong>{s.title ?? s.song_id}</strong>
+                  {s.artist ? <span className="muted"> — {s.artist}</span> : null}
+                </span>
+                <span className="tag">{Math.round(s.enjoyment * 100)}</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </>
+  );
+}
+
+function CrowdBar({
+  label,
+  pct,
+  highWord,
+  lowWord,
+}: {
+  label: string;
+  pct: number | null | undefined;
+  highWord: string;
+  lowWord: string;
+}) {
+  if (pct == null) return null;
+  const p = Math.round(pct * 100);
+  const above = p >= 50;
+  const phrase = above ? `${highWord} than ${p}%` : `${lowWord} than ${100 - p}%`;
+  return (
+    <div className="crowd-row">
+      <span className="crowd-label">{label}</span>
+      <div className="crowd-bar">
+        <div className="crowd-fill" style={{ width: `${p}%` }} />
+        <div className="crowd-mid" />
+      </div>
+      <span className="muted small crowd-phrase">{phrase}</span>
     </div>
   );
 }

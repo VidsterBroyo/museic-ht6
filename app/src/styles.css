@@ -167,6 +167,41 @@ code { background: #1d1d27; padding: 1px 6px; border-radius: 4px; font-size: 0.8
   border-left: 5px solid transparent; border-right: 5px solid transparent;
   border-top: 8px solid #e6e6f0;
 }
+
+/* Music DNA insight cards */
+.dna-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px; margin: 12px 0 4px;
+}
+.dna-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
+}
+.dna-card-title {
+  font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600;
+}
+.dna-big { font-size: 2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.dna-unit { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+.dna-mode { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+.dna-mode-bar {
+  display: flex; height: 8px; border-radius: 5px; overflow: hidden; background: #1d1d27;
+}
+.dna-mode-fill.minor { background: #a06bff; }
+.dna-mode-fill.major { background: #3ea8ff; }
+
+.crowd-row { display: grid; grid-template-columns: 66px 1fr; align-items: center; gap: 8px; margin: 3px 0; }
+.crowd-label { font-size: 0.8rem; }
+.crowd-bar {
+  position: relative; height: 8px; background: #1d1d27; border-radius: 5px; overflow: hidden;
+}
+.crowd-fill { height: 100%; background: var(--accent); }
+.crowd-mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--muted); opacity: 0.5; }
+.crowd-phrase { grid-column: 2; }
+
+.top-songs { line-height: 1.9; padding-left: 22px; }
+.top-songs li { padding-left: 4px; }
+.top-song-name { margin-right: 8px; }
 .compat-score { margin: 18px 0; }
 .big-number { font-size: 3rem; font-weight: 800; color: var(--accent); }
 

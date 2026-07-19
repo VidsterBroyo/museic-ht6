@@ -4,3 +4,4 @@ soundfile>=0.12
 pymongo>=4.7
 requests>=2.32
 python-dotenv>=1.0
+tinytag>=1.10

@@ -50,6 +50,8 @@ export interface Song {
   key: string | null;
   llm_tags: { instruments?: string[]; vocal_character?: string; mood?: string[] } | null;
   spotify_uri: string | null;
+  sections: { start_s: number; end_s: number; label: string }[];
+  album_art_b64: string | null;
 }
 
 export interface GraphPoint {
@@ -95,6 +97,40 @@ export interface Profile {
     quadrant: string;
   }[];
   narrative: string | null;
+  insights: Insights | null;
+}
+
+export interface SonicSignature {
+  sweet_spot_bpm: number;
+  tempo_low: number;
+  tempo_high: number;
+  minor_pct: number | null;
+  major_pct: number | null;
+  dominant_mode: "minor" | "major" | null;
+  top_key: string | null;
+  n_songs: number;
+}
+
+export interface TopSong {
+  song_id: string;
+  title: string | null;
+  artist: string | null;
+  enjoyment: number;
+  seconds: number;
+  peak_arousal: number;
+}
+
+export interface CrowdStats {
+  n_listeners: number;
+  energy_pct?: number | null;
+  positivity_pct?: number | null;
+  tempo_pct?: number | null;
+}
+
+export interface Insights {
+  sonic_signature: SonicSignature | null;
+  top_songs: TopSong[];
+  crowd: CrowdStats | null;
 }
 
 export interface Recommendation {

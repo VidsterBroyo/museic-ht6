@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import backboard, db, ml_model, recommend, signals, spotify
+from . import backboard, config, db, insights, ml_model, recommend, signals, spotify
 from .auth import current_user_id, raw_access_token, user_id_header_or_query
 from .profiles import rebuild_profile
 
@@ -146,26 +146,86 @@ def _top_peaks(user_id: str, n: int = 8) -> list[dict[str, Any]]:
     return peaks
 
 
+def _profile_response(
+    user_id: str,
+    profile: dict[str, Any],
+    peaks: list[dict[str, Any]],
+    narrative: str | None,
+    computed_insights: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "user_id": user_id,
+        "taste_vector": profile.get("vector"),
+        "top_tags": profile.get("tags"),
+        "quadrant_counts": profile.get("quadrant_counts"),
+        "mean_arousal": profile.get("mean_arousal"),
+        "mean_valence": profile.get("mean_valence"),
+        "n_moments": profile.get("n_moments"),
+        "arousal_peaks": peaks,
+        "narrative": narrative,
+        "insights": computed_insights,
+        "updated_at": profile.get("updated_at"),
+    }
+
+
+def _profile_is_fresh(stored: dict[str, Any] | None) -> bool:
+    """Fresh = a stored doc fully served (rebuild + narrative + insights) within
+    the TTL window. Reaction batches only bump `updated_at`, never `refreshed_at`,
+    so active listening doesn't keep the served view 'fresh'."""
+    if not stored or "refreshed_at" not in stored:
+        return False
+    ts = stored["refreshed_at"]
+    if getattr(ts, "tzinfo", None) is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - ts < timedelta(
+        seconds=config.PROFILE_REFRESH_TTL_SECONDS
+    )
+
+
 @app.get("/profile/{user_id}")
-def get_profile(user_id: str, _caller: str = Depends(current_user_id)) -> dict[str, Any]:
-    """Compute taste vector + trigger the Gemini narrative (aggregate across all
-    songs). Narrative goes through Backboard.io for persistent memory."""
+def get_profile(
+    user_id: str,
+    refresh: bool = False,
+    _caller: str = Depends(current_user_id),
+) -> dict[str, Any]:
+    """Serve the user's profile. The expensive path (taste-vector recompute +
+    Backboard narrative + derived insights) runs at most once per
+    PROFILE_REFRESH_TTL_SECONDS; within that window the stored document is
+    returned as-is. Pass ?refresh=true to force a regeneration."""
+    stored = db.profiles.find_one({"user_id": user_id})
+    if stored and not refresh and _profile_is_fresh(stored):
+        return _profile_response(
+            user_id,
+            stored,
+            stored.get("arousal_peaks") or [],
+            stored.get("narrative"),
+            stored.get("insights"),
+        )
+
     profile = rebuild_profile(user_id)
     peaks = _top_peaks(user_id)
     summary = {
         "taste_vector": profile.get("vector"),
         "top_tags": profile.get("tags"),
         "quadrant_counts": profile.get("quadrant_counts"),
+        "mean_arousal": profile.get("mean_arousal"),
+        "mean_valence": profile.get("mean_valence"),
         "n_moments": profile.get("n_moments"),
         "arousal_peaks": peaks,
     }
     narrative = backboard.generate_narrative(user_id, summary)
-    return {
-        "user_id": user_id,
-        **summary,
-        "narrative": narrative,
-        "updated_at": profile.get("updated_at"),
-    }
+    computed_insights = insights.compute_all(user_id)
+    db.profiles.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "arousal_peaks": peaks,
+            "narrative": narrative,
+            "insights": computed_insights,
+            "refreshed_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+    return _profile_response(user_id, profile, peaks, narrative, computed_insights)
 
 
 # ---------------------------------------------------------------------------
