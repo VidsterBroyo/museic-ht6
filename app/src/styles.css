@@ -406,6 +406,17 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .compare-remove:hover { color: var(--text); }
 .compare-empty { margin: 4px 0; }
 .compare-result-note { margin: 18px 0; }
+.compare-results-empty {
+  min-height: 240px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  padding: 28px 16px;
+}
+.compare-results-empty h2 {
+  margin: 0 0 6px; font-size: 1.8rem;
+}
+.compare-results-empty p {
+  max-width: 560px; margin: 0; line-height: 1.45;
+}
 .compare-page .compat-score {
   text-align: center; margin-top: 28px;
 }

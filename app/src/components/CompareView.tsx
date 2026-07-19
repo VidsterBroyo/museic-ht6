@@ -197,6 +197,15 @@ export default function CompareView({ selfId }: { selfId: string }) {
       </div>
 
       {error && <p className="error">{error}</p>}
+      {!loading && !error && !data && (
+        <div className="compare-results-empty">
+          <h2>Select a friend</h2>
+          <p className="muted">
+            Choose a saved friend and click Compare to see your compatibility score, conclusions,
+            and song-by-song reaction graphs.
+          </p>
+        </div>
+      )}
       {data && data.compatibility === null && (
         <p className="muted compare-result-note">
           No comparable data with {selectedFriend?.name ?? "this friend"} yet — {data.reason ?? "react to the same songs first."}
