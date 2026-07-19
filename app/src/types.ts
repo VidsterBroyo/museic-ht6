@@ -171,9 +171,11 @@ declare global {
   interface Window {
     museic: {
       login: () => Promise<void>;
+      connectSpotify: () => Promise<void>;
       logout: () => Promise<void>;
       getSession: () => Promise<Session | null>;
       onAuthChanged: (cb: () => void) => () => void;
+      onSpotifyConnected: (cb: () => void) => () => void;
       startCapture: (opts?: { simulate?: boolean }) => Promise<{ mode: "presage" | "simulated" }>;
       stopCapture: () => Promise<void>;
       onSensorReading: (cb: (reading: SensorReading) => void) => () => void;

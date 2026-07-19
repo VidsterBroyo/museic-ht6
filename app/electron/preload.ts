@@ -2,12 +2,18 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("museic", {
   login: () => ipcRenderer.invoke("auth:login"),
+  connectSpotify: () => ipcRenderer.invoke("auth:connect-spotify"),
   logout: () => ipcRenderer.invoke("auth:logout"),
   getSession: () => ipcRenderer.invoke("auth:get-session"),
   onAuthChanged: (cb: () => void) => {
     const listener = () => cb();
     ipcRenderer.on("auth:changed", listener);
     return () => ipcRenderer.removeListener("auth:changed", listener);
+  },
+  onSpotifyConnected: (cb: () => void) => {
+    const listener = () => cb();
+    ipcRenderer.on("spotify:connected", listener);
+    return () => ipcRenderer.removeListener("spotify:connected", listener);
   },
   startCapture: (opts?: { simulate?: boolean }) => ipcRenderer.invoke("capture:start", opts),
   stopCapture: () => ipcRenderer.invoke("capture:stop"),

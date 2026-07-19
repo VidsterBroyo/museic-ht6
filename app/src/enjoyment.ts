@@ -208,7 +208,7 @@ export function useEnjoyment(): number | null {
         lastFlush = Date.now();
         pending = null;
         setScore((prev) => {
-          if (prev == null) return next;
+          if (prev == null || next == null) return next;
           if (Math.round(prev * 100) === Math.round(next * 100)) return prev;
           return next;
         });

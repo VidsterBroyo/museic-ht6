@@ -22,6 +22,19 @@ const AUTH0_CLIENT_ID = process.env.AUTH0_CLIENT_ID ?? "";
 const AUTH0_AUDIENCE = process.env.AUTH0_AUDIENCE ?? "";
 const REDIRECT_URI = "museic://callback";
 
+// The Spotify federated connection (Auth0). Users pick their own login method;
+// Spotify playlist export is authorized SEPARATELY via the Connected Accounts
+// flow (see beginConnectSpotify), which stores the Spotify tokens in Auth0 Token
+// Vault against the currently logged-in user (RFC §6).
+const AUTH0_SPOTIFY_CONNECTION = process.env.AUTH0_SPOTIFY_CONNECTION ?? "spotify";
+// Upstream Spotify OAuth scopes needed to create playlists on the user's behalf,
+// requested during the Connected Accounts flow. The connection must also have
+// Offline Access / Token Vault enabled so the refresh token is actually stored.
+const SPOTIFY_CONNECTION_SCOPE = "playlist-modify-public playlist-modify-private";
+// My Account API base -- the Connected Accounts endpoints live under here, and
+// it is also the audience of the access token used to call them.
+const MY_ACCOUNT_AUDIENCE = `https://${AUTH0_DOMAIN}/me/`;
+
 interface StoredTokens {
   access_token: string;
   refresh_token?: string;
@@ -30,6 +43,7 @@ interface StoredTokens {
 }
 
 let pending: { verifier: string; state: string } | null = null;
+let pendingConnect: { verifier: string; authSession: string; myAccountToken: string } | null = null;
 let cached: StoredTokens | null = null;
 
 function tokenFile(): string {
@@ -72,7 +86,9 @@ function b64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** Open the system browser on the Auth0 /authorize endpoint (PKCE). */
+/** Open the system browser on the Auth0 /authorize endpoint (PKCE). Users pick
+ * their login method in Universal Login (Spotify appears there too if its
+ * connection has Authentication enabled). */
 export function beginLogin(): void {
   if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
     throw new Error("AUTH0_DOMAIN / AUTH0_CLIENT_ID not configured (repo-root .env)");
@@ -95,17 +111,24 @@ export function beginLogin(): void {
   void shell.openExternal(`https://${AUTH0_DOMAIN}/authorize?${params.toString()}`);
 }
 
-/** Handle museic://callback?code=...&state=... from the OS. */
-export async function handleCallbackUrl(url: string): Promise<boolean> {
+export type CallbackResult = "login" | "connect" | "ignored";
+
+/**
+ * Handle museic://callback from the OS. Two shapes are accepted:
+ *  - login:   ?code=...&state=...   (Authorization Code + PKCE)
+ *  - connect: ?connect_code=...     (Connected Accounts / Token Vault)
+ */
+export async function handleCallbackUrl(url: string): Promise<CallbackResult> {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return false;
+    return "ignored";
   }
-  if (parsed.protocol !== "museic:") return false;
+  if (parsed.protocol !== "museic:") return "ignored";
   const code = parsed.searchParams.get("code");
   const state = parsed.searchParams.get("state");
+  const connectCode = parsed.searchParams.get("connect_code");
   const authError = parsed.searchParams.get("error");
   const authErrorDesc = parsed.searchParams.get("error_description");
   if (authError) {
@@ -113,22 +136,31 @@ export async function handleCallbackUrl(url: string): Promise<boolean> {
       error: authError,
       error_description: authErrorDesc,
     });
-    return false;
+    pending = null;
+    pendingConnect = null;
+    return "ignored";
   }
+
+  // Connected Accounts (Connect Spotify) completion.
+  if (connectCode) {
+    return (await completeConnectSpotify(connectCode)) ? "connect" : "ignored";
+  }
+
+  // Standard login.
   if (!code) {
-    console.warn("auth callback rejected: no `code` param in callback URL", url);
-    return false;
+    console.warn("auth callback rejected: no `code`/`connect_code` param in callback URL", url);
+    return "ignored";
   }
   if (!pending) {
     console.warn("auth callback rejected: no pending login in this process (was beginLogin() called on a different app instance?)");
-    return false;
+    return "ignored";
   }
   if (state !== pending.state) {
     console.warn("auth callback rejected: state mismatch", {
       received: state,
       expected: pending.state,
     });
-    return false;
+    return "ignored";
   }
   const resp = await fetch(`https://${AUTH0_DOMAIN}/oauth/token`, {
     method: "POST",
@@ -144,7 +176,7 @@ export async function handleCallbackUrl(url: string): Promise<boolean> {
   pending = null;
   if (!resp.ok) {
     console.error("token exchange failed:", resp.status, await resp.text());
-    return false;
+    return "ignored";
   }
   const body = (await resp.json()) as {
     access_token: string;
@@ -158,6 +190,109 @@ export async function handleCallbackUrl(url: string): Promise<boolean> {
     id_token: body.id_token,
     expires_at: Date.now() + body.expires_in * 1000,
   });
+  return "login";
+}
+
+// ---------------------------------------------------------------------------
+// Connect Spotify (Auth0 Connected Accounts for Token Vault)
+//
+// Attaches the user's Spotify account to their EXISTING Auth0 profile so the
+// backend can exchange the logged-in user's token for a Spotify token at export
+// time. Deliberately separate from login: users authenticate with any
+// connection, then authorize Spotify once here.
+// ---------------------------------------------------------------------------
+
+/** Get a My Account API access token via a refresh-token exchange. Requires
+ * Multi-Resource Refresh Token enabled for the app. Returns null on failure. */
+async function getMyAccountToken(): Promise<string | null> {
+  const tokens = loadTokens();
+  if (!tokens?.refresh_token) return null;
+  const resp = await fetch(`https://${AUTH0_DOMAIN}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "refresh_token",
+      client_id: AUTH0_CLIENT_ID,
+      refresh_token: tokens.refresh_token,
+      audience: MY_ACCOUNT_AUDIENCE,
+      scope: "openid create:me:connected_accounts",
+    }),
+  });
+  if (!resp.ok) {
+    console.error("My Account API token exchange failed:", resp.status, await resp.text());
+    return null;
+  }
+  return ((await resp.json()) as { access_token: string }).access_token;
+}
+
+/** Start the Connect Spotify flow: ask the My Account API for a connect URI and
+ * open it in the system browser. Completion arrives via the museic://callback
+ * with a `connect_code`. Throws with an actionable message on failure. */
+export async function beginConnectSpotify(): Promise<void> {
+  if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
+    throw new Error("AUTH0_DOMAIN / AUTH0_CLIENT_ID not configured (repo-root .env)");
+  }
+  const myAccountToken = await getMyAccountToken();
+  if (!myAccountToken) {
+    throw new Error(
+      "Could not obtain a My Account API token. Make sure you are logged in, the My Account " +
+        "API is activated, the app is authorized for the create:me:connected_accounts scope, and " +
+        "Multi-Resource Refresh Token is enabled (see SETUP.md, Auth0 section).",
+    );
+  }
+  const verifier = b64url(crypto.randomBytes(48));
+  const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
+  const resp = await fetch(`${MY_ACCOUNT_AUDIENCE}v1/connected-accounts/connect`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${myAccountToken}`,
+    },
+    body: JSON.stringify({
+      connection: AUTH0_SPOTIFY_CONNECTION,
+      redirect_uri: REDIRECT_URI,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      scopes: ["openid", "offline_access", ...SPOTIFY_CONNECTION_SCOPE.split(" ")],
+    }),
+  });
+  if (!resp.ok) {
+    throw new Error(
+      `Auth0 connected-accounts/connect failed: ${resp.status} ${(await resp.text()).slice(0, 300)}`,
+    );
+  }
+  const body = (await resp.json()) as { connect_uri?: string; auth_session?: string };
+  if (!body.connect_uri || !body.auth_session) {
+    throw new Error("Auth0 connected-accounts/connect returned an unexpected response.");
+  }
+  pendingConnect = { verifier, authSession: body.auth_session, myAccountToken };
+  void shell.openExternal(body.connect_uri);
+}
+
+/** Finish the Connect Spotify flow with the connect_code from the callback. */
+async function completeConnectSpotify(connectCode: string): Promise<boolean> {
+  if (!pendingConnect) {
+    console.warn("connect callback rejected: no pending Spotify connect in this process");
+    return false;
+  }
+  const { verifier, authSession, myAccountToken } = pendingConnect;
+  pendingConnect = null;
+  const resp = await fetch(`${MY_ACCOUNT_AUDIENCE}v1/connected-accounts/complete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${myAccountToken}`,
+    },
+    body: JSON.stringify({
+      connect_code: connectCode,
+      code_verifier: verifier,
+      auth_session: authSession,
+    }),
+  });
+  if (!resp.ok) {
+    console.error("connected-accounts/complete failed:", resp.status, await resp.text());
+    return false;
+  }
   return true;
 }
 

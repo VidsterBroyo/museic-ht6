@@ -106,8 +106,9 @@ app.on("open-url", (event, url) => {
 });
 
 async function handleAuthCallback(url: string): Promise<void> {
-  const ok = await auth.handleCallbackUrl(url);
-  if (ok) mainWindow?.webContents.send("auth:changed");
+  const result = await auth.handleCallbackUrl(url);
+  if (result === "login") mainWindow?.webContents.send("auth:changed");
+  else if (result === "connect") mainWindow?.webContents.send("spotify:connected");
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +201,7 @@ function clearNowPlaying(): void {
 // IPC surface (see preload.ts)
 // ---------------------------------------------------------------------------
 ipcMain.handle("auth:login", () => auth.beginLogin());
+ipcMain.handle("auth:connect-spotify", () => auth.beginConnectSpotify());
 ipcMain.handle("auth:logout", () => {
   auth.logout();
   mainWindow?.webContents.send("auth:changed");

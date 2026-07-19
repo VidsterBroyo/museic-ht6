@@ -37,6 +37,10 @@ export default function ProfileView({ userId }: { userId: string }) {
   } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState<string | null>(null);
+  // Set when export fails because Token Vault has no Spotify token for this user
+  // yet. Prompts the Connected Accounts ("Connect Spotify") flow to populate it.
+  const [needsReconnect, setNeedsReconnect] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
     const path = `/profile/${encodeURIComponent(userId)}`;
@@ -51,6 +55,15 @@ export default function ProfileView({ userId }: { userId: string }) {
       })
       .catch((e) => setError(String(e)));
   }, [userId]);
+
+  // Fires when the Connect Spotify flow completes (Token Vault now populated).
+  useEffect(() => {
+    return window.museic.onSpotifyConnected(() => {
+      setNeedsReconnect(false);
+      setConnecting(false);
+      setExportResult("Spotify connected. Click “Export playlist to Spotify” to try again.");
+    });
+  }, []);
 
   const loadRecs = async () => {
     try {
@@ -71,6 +84,7 @@ export default function ProfileView({ userId }: { userId: string }) {
   const exportPlaylist = async () => {
     setExporting(true);
     setExportResult(null);
+    setNeedsReconnect(false);
     try {
       const result = await api<{ playlist_url: string | null; added: number }>(
         "/playlist/export",
@@ -82,9 +96,37 @@ export default function ProfileView({ userId }: { userId: string }) {
           : `Exported ${result.added} track(s).`,
       );
     } catch (e) {
-      setExportResult(`Export failed — ${String(e)}`);
+      const msg = String(e);
+      // Auth0 Token Vault has no Spotify refresh token for this user yet.
+      if (
+        msg.includes("federated_connection_refresh_token_not_found") ||
+        msg.includes("connected their Spotify")
+      ) {
+        setNeedsReconnect(true);
+        setExportResult(
+          "Museic isn't connected to your Spotify account yet. Connect Spotify to authorize " +
+            "playlist export, then try again.",
+        );
+      } else {
+        setExportResult(`Export failed — ${msg}`);
+      }
     } finally {
       setExporting(false);
+    }
+  };
+
+  const connectSpotify = async () => {
+    setConnecting(true);
+    setExportResult(null);
+    try {
+      await window.museic.connectSpotify();
+      setExportResult(
+        "Opening your browser to connect Spotify… approve access there, then return here and export again.",
+      );
+    } catch (e) {
+      setExportResult(`Couldn't start Spotify connection — ${String(e)}`);
+    } finally {
+      setConnecting(false);
     }
   };
 
@@ -176,6 +218,11 @@ export default function ProfileView({ userId }: { userId: string }) {
         <button disabled={exporting} onClick={() => void exportPlaylist()}>
           {exporting ? "exporting…" : "Export playlist to Spotify"}
         </button>
+        {needsReconnect && (
+          <button className="primary" disabled={connecting} onClick={() => void connectSpotify()}>
+            {connecting ? "connecting…" : "Connect Spotify"}
+          </button>
+        )}
       </div>
       {exportResult && <p className="muted small">{exportResult}</p>}
 
