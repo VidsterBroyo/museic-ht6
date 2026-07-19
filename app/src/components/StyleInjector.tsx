@@ -235,44 +235,30 @@ input[type="text"] {
 
 /* MuseControl.tsx */
 .muse-pill {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 20;
-
   display: flex;
   align-items: center;
   gap: 8px;
-
-  background: rgba(26, 26, 46, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: 1px solid var(--border-color);
-
   font-size: 0.9rem;
+}
+.muse-pill .muse-toggle {
+  background: rgba(26, 26, 46, 0.7);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-weight: 500;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   transition: all 0.3s ease;
 }
-.muse-pill.muse-streaming {
+.muse-pill .muse-toggle:hover {
   border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+.muse-pill.muse-streaming .muse-toggle {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 15px -2px var(--accent-cyan);
 }
-.muse-pill .muse-toggle {
-  background: none;
-  border: none;
-  padding: 0;
-  font-weight: 500;
-}
-.muse-pill .muse-toggle:hover {
-  border-color: transparent;
-}
-.muse-pill .muse-sim {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.muse-pill .muse-state {
   color: var(--text-muted);
 }
       `}

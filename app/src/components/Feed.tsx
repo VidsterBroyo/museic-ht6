@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, audioUrl } from "../api";
 import { annotatePoint } from "./signals";
-import type { SensorReading, Song, SongGraphPoint, SongGraphResponse } from "../types";
+import type { GraphPoint, SensorReading, Song, SongGraphResponse } from "../types";
 import { StyleInjector } from "./StyleInjector";
 import SongGraph from "./SongGraph";
 
@@ -76,12 +76,16 @@ export default function Feed({ userId }: { userId: string }) {
         }
 
         const newAnnotation = annotatePoint(reading, prevReading);
-        const fullPoint: SongGraphPoint = {
+        // Feature curves aren't sent to the client, but the pre-fetched
+        // /song-graph points already carry per-second energy/brightness/onset.
+        const existing = prevData.points.find((p) => p.t === t);
+        const fullPoint: GraphPoint = {
           t,
           ...newAnnotation,
-          energy: prevData.song.features?.energy_curve?.[t] ?? null,
-          brightness: prevData.song.features?.spectral_brightness_curve?.[t] ?? null,
-          onset_density: prevData.song.features?.onset_density_curve?.[t] ?? null,
+          muse: existing?.muse ?? null,
+          energy: existing?.energy ?? null,
+          brightness: existing?.brightness ?? null,
+          onset_density: existing?.onset_density ?? null,
         };
 
         return { ...prevData, points: [...prevData.points, fullPoint] };
@@ -129,7 +133,7 @@ export default function Feed({ userId }: { userId: string }) {
         return;
       }
       await flush(currentRef.current);
-      setGraphData({ song, points: [] }); // Show graph box immediately
+      setGraphData({ song: { ...song, sections: [] }, points: [] }); // Show graph box immediately
 
       const audio = audioRef.current;
       if (!audio) return;

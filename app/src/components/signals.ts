@@ -1,4 +1,4 @@
-import type { RawSensorData, SensorReading, SongGraphPoint } from "./types";
+import type { RawSensorData, SensorReading } from "../types";
 
 const EXPRESSION_VALENCE: Record<string, number> = {
   happy: 1.0,
