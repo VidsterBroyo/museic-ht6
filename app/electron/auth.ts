@@ -277,7 +277,6 @@ export async function beginConnectSpotify(): Promise<void> {
   // that session, so Auth0 rejects the connect page with "forbidden". Always
   // acquire the token interactively; handleCallbackUrl then opens the connect URI
   // in that same authenticated browser.
-  console.log("[connect] starting interactive My Account authorize");
   beginMyAccountAuthorize();
 }
 
@@ -299,9 +298,7 @@ function beginMyAccountAuthorize(): void {
     code_challenge_method: "S256",
     state,
   });
-  const authorizeUrl = `https://${AUTH0_DOMAIN}/authorize?${params.toString()}`;
-  console.log("[connect] interactive My Account authorize URL:", authorizeUrl);
-  void shell.openExternal(authorizeUrl);
+  void shell.openExternal(`https://${AUTH0_DOMAIN}/authorize?${params.toString()}`);
 }
 
 /** Ask the My Account API for a connect URI (using the given My Account token)
@@ -328,7 +325,6 @@ async function requestConnect(myAccountToken: string): Promise<void> {
       scopes: SPOTIFY_CONNECTION_SCOPE.split(" "),
     }),
   });
-  console.log("[connect] connect POST status:", resp.status);
   if (!resp.ok) {
     throw new Error(
       `Auth0 connected-accounts/connect failed: ${resp.status} ${(await resp.text()).slice(0, 300)}`,
@@ -340,7 +336,6 @@ async function requestConnect(myAccountToken: string): Promise<void> {
     ticket?: string;
     connect_params?: { ticket?: string };
   };
-  console.log("[connect] connect response body:", JSON.stringify(body));
   // Auth0 returns a base connect_uri plus a ticket; the interactive page needs
   // the ticket as a query param, otherwise it 400s with a generic
   // "one or more validation errors occurred".
@@ -380,12 +375,10 @@ async function completeConnectSpotify(connectCode: string): Promise<boolean> {
       redirect_uri: REDIRECT_URI,
     }),
   });
-  console.log("[connect] complete POST status:", resp.status);
   if (!resp.ok) {
     console.error("connected-accounts/complete failed:", resp.status, await resp.text());
     return false;
   }
-  console.log("[connect] connected account stored \u2713");
   return true;
 }
 
