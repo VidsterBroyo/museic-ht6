@@ -61,12 +61,6 @@ function SongGraph({
           <Line type="monotone" dataKey="onset_density" stroke="#C97B9A" dot={false} strokeDasharray="2 4" connectNulls name="onset density" />
         </LineChart>
       </ResponsiveContainer>
-      {highSections.length > 0 && (
-        <p className="muted small song-graph-hint">
-          <span className="song-graph-band-swatch" aria-hidden />
-          Amber bands = louder parts of the song
-        </p>
-      )}
     </div>
   );
 }

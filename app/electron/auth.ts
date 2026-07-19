@@ -44,6 +44,8 @@ interface StoredTokens {
 
 let pending: { verifier: string; state: string } | null = null;
 let pendingConnect: { verifier: string; authSession: string; myAccountToken: string } | null = null;
+// Interactive My Account API authorize in progress (Connect Spotify fallback).
+let pendingMyAccount: { verifier: string; state: string } | null = null;
 let cached: StoredTokens | null = null;
 
 function tokenFile(): string {
@@ -146,6 +148,42 @@ export async function handleCallbackUrl(url: string): Promise<CallbackResult> {
     return (await completeConnectSpotify(connectCode)) ? "connect" : "ignored";
   }
 
+  // Interactive My Account API token step of the Connect Spotify flow. This is
+  // the fallback used when the silent refresh-token exchange can't satisfy the
+  // API's authentication-assurance requirement. On success we immediately kick
+  // off the actual connect (opening the Spotify consent URI); the final result
+  // arrives later as a `connect_code` callback, handled above.
+  if (code && pendingMyAccount && state === pendingMyAccount.state) {
+    const verifier = pendingMyAccount.verifier;
+    pendingMyAccount = null;
+    const tokenResp = await fetch(`https://${AUTH0_DOMAIN}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        client_id: AUTH0_CLIENT_ID,
+        code,
+        redirect_uri: REDIRECT_URI,
+        code_verifier: verifier,
+      }),
+    });
+    if (!tokenResp.ok) {
+      console.error(
+        "My Account token exchange (interactive) failed:",
+        tokenResp.status,
+        await tokenResp.text(),
+      );
+      return "ignored";
+    }
+    const myAccountToken = ((await tokenResp.json()) as { access_token: string }).access_token;
+    try {
+      await requestConnect(myAccountToken);
+    } catch (e) {
+      console.error("connected-accounts/connect failed after interactive token:", e);
+    }
+    return "ignored";
+  }
+
   // Standard login.
   if (!code) {
     console.warn("auth callback rejected: no `code`/`connect_code` param in callback URL", url);
@@ -225,21 +263,50 @@ async function getMyAccountToken(): Promise<string | null> {
   return ((await resp.json()) as { access_token: string }).access_token;
 }
 
-/** Start the Connect Spotify flow: ask the My Account API for a connect URI and
- * open it in the system browser. Completion arrives via the museic://callback
- * with a `connect_code`. Throws with an actionable message on failure. */
+/** Start the Connect Spotify flow. First obtain a My Account API token: try a
+ * silent refresh-token exchange (needs MRRT), and if that is rejected -- e.g.
+ * the My Account API requires interactive/step-up auth that a backchannel
+ * exchange "cannot be challenged" for -- fall back to an interactive authorize
+ * in the system browser. Completion always arrives via museic://callback. */
 export async function beginConnectSpotify(): Promise<void> {
   if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
     throw new Error("AUTH0_DOMAIN / AUTH0_CLIENT_ID not configured (repo-root .env)");
   }
   const myAccountToken = await getMyAccountToken();
-  if (!myAccountToken) {
-    throw new Error(
-      "Could not obtain a My Account API token. Make sure you are logged in, the My Account " +
-        "API is activated, the app is authorized for the create:me:connected_accounts scope, and " +
-        "Multi-Resource Refresh Token is enabled (see SETUP.md, Auth0 section).",
-    );
+  if (myAccountToken) {
+    await requestConnect(myAccountToken);
+    return;
   }
+  // Silent path unavailable (no MRRT, or the API requires interactive/step-up
+  // auth). Get the My Account token interactively; handleCallbackUrl continues.
+  beginMyAccountAuthorize();
+}
+
+/** Interactive acquisition of a My Account API access token via Universal Login,
+ * used when the silent refresh-token exchange can't satisfy the API's
+ * authentication-assurance requirement. Continues in handleCallbackUrl. */
+function beginMyAccountAuthorize(): void {
+  const verifier = b64url(crypto.randomBytes(48));
+  const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
+  const state = b64url(crypto.randomBytes(16));
+  pendingMyAccount = { verifier, state };
+  const params = new URLSearchParams({
+    client_id: AUTH0_CLIENT_ID,
+    response_type: "code",
+    redirect_uri: REDIRECT_URI,
+    scope: "openid create:me:connected_accounts",
+    audience: MY_ACCOUNT_AUDIENCE,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state,
+  });
+  void shell.openExternal(`https://${AUTH0_DOMAIN}/authorize?${params.toString()}`);
+}
+
+/** Ask the My Account API for a connect URI (using the given My Account token)
+ * and open it in the system browser. Completion arrives via museic://callback
+ * with a `connect_code`. Throws with an actionable message on failure. */
+async function requestConnect(myAccountToken: string): Promise<void> {
   const verifier = b64url(crypto.randomBytes(48));
   const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
   const resp = await fetch(`${MY_ACCOUNT_AUDIENCE}v1/connected-accounts/connect`, {

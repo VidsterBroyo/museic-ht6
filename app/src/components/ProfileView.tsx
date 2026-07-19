@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Cell,
   ReferenceArea,
@@ -42,20 +42,41 @@ export default function ProfileView({ userId }: { userId: string }) {
   // yet. Prompts the Connected Accounts ("Connect Spotify") flow to populate it.
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const path = `/profile/${encodeURIComponent(userId)}`;
-    api<Profile>(path)
-      .then(async (p) => {
+  const loadProfile = useCallback(
+    async (forceRefresh = false) => {
+      const path = `/profile/${encodeURIComponent(userId)}`;
+      try {
+        if (forceRefresh) {
+          // Bypass the TTL cache and regenerate the profile server-side.
+          setProfile(await api<Profile>(`${path}?refresh=true`));
+          return;
+        }
+        const p = await api<Profile>(path);
         // Old cached blurbs have no **bold** markers — force one regen for the short form.
         if (p.narrative && !p.narrative.includes("**")) {
           setProfile(await api<Profile>(`${path}?refresh=true`));
         } else {
           setProfile(p);
         }
-      })
-      .catch((e) => setError(String(e)));
-  }, [userId]);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [userId],
+  );
+
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  const refreshProfile = async () => {
+    setRefreshing(true);
+    setError(null);
+    await loadProfile(true);
+    setRefreshing(false);
+  };
 
   // Fires when the Connect Spotify flow completes (Token Vault now populated).
   useEffect(() => {
@@ -255,6 +276,17 @@ export default function ProfileView({ userId }: { userId: string }) {
         user id: <code>{profile.user_id}</code>{" "}
         <CopyIdButton text={profile.user_id} />
       </p>
+
+      <div className="refresh-row">
+        <button
+          type="button"
+          className="refresh-btn"
+          disabled={refreshing}
+          onClick={() => void refreshProfile()}
+        >
+          {refreshing ? "refreshing…" : "↻ Refresh"}
+        </button>
+      </div>
     </div>
   );
 }

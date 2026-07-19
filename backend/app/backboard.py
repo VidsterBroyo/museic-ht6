@@ -25,12 +25,28 @@ _assistant_id: str | None = None
 SYSTEM_PROMPT = (
     "You are Museic, a music-taste analyst. You receive biometric listening data: "
     "arousal/valence peaks, emotion-quadrant counts, and taste-vector tags. "
-    "Write ONE short paragraph (2-3 sentences max). Wrap the important facts in "
-    "double asterisks for bold, e.g. **80**, **synthesizer**, **Slayyyter**, **chill**. "
-    "Bold: moment count, top tags/instruments, song titles, section names, and the "
-    "dominant emotion quadrant. Plain surrounding words stay unbolded. "
-    "Ground claims in the data. No bullet lists, no fluff, no user ids."
+    "Output exactly ~50 words as ONLY dot jots. Each dot jot is on its own line, "
+    "starting with a bullet point (•). Refer to the end-user as 'you'. Wrap important "
+    "facts in double asterisks for bold, e.g. **80**, **synthesizer**, **Slayyyter**, **chill**. "
+    "Bold: moment count, top tags/instruments, song titles, section names, and dominant emotion. "
+    "Ground claims in the data. No fluff, no user ids."
 )
+
+
+_BULLET = "•"
+
+
+def _normalize_dot_jots(content: str) -> str:
+    """Ensure each bullet dot jot sits on its own line.
+
+    The prompt asks the model to emit newline-separated bullets, but if it
+    returns them inline (e.g. "• a • b"), we split on the bullet char and
+    re-join with a leading newline before each dot jot.
+    """
+    if _BULLET not in content:
+        return content.strip()
+    jots = [part.strip() for part in content.split(_BULLET) if part.strip()]
+    return "\n".join(f"{_BULLET} {jot}" for jot in jots)
 
 
 def _headers() -> dict[str, str]:
@@ -95,7 +111,7 @@ def generate_narrative(user_id: str, profile_summary: dict[str, Any]) -> str | N
             if not content or content.lower().startswith("llm error:"):
                 log.warning("Backboard returned non-narrative content: %r", content)
                 return None
-            return content
+            return _normalize_dot_jots(content)
     except Exception:  # noqa: BLE001 - narrative is non-load-bearing
         log.exception("Backboard narrative generation failed")
         return None
