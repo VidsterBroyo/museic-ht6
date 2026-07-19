@@ -406,6 +406,12 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .compare-remove:hover { color: var(--text); }
 .compare-empty { margin: 4px 0; }
 .compare-result-note { margin: 18px 0; }
+.compare-explainer {
+  max-width: 760px; margin: -8px 0 18px; line-height: 1.45;
+}
+.compare-chart-note {
+  margin: -4px 0 12px; line-height: 1.4;
+}
 @media (max-width: 760px) {
   .compare-head { flex-direction: column; }
   .compare-head .primary { width: 100%; }

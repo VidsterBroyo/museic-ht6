@@ -211,12 +211,21 @@ export default function CompareView({ selfId }: { selfId: string }) {
               with {selectedFriend?.name ?? "friend"} over {data.shared_songs.length} shared song(s)
             </span>
           </div>
+          <p className="compare-explainer muted">
+            The compatibility score compares how similarly your bodies reacted to the same songs.
+            Each chart shows arousal over time: higher values mean a stronger physiological reaction
+            at that second of the track.
+          </p>
           {data.shared_songs.map((s) => (
             <div key={s.song_id} className="chart-box">
               <h3>
                 {s.title ?? s.song_id} <span className="muted">— {s.artist ?? ""}</span>{" "}
                 {s.score !== null && <span className="tag">{Math.round(s.score * 100)}%</span>}
               </h3>
+              <p className="compare-chart-note muted small">
+                X-axis is song time in seconds. Y-axis is normalized arousal from 0 to 1.
+                The blue line is you; the pink line is {selectedFriend?.name ?? "your friend"}.
+              </p>
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={s.points} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                   <CartesianGrid stroke="rgba(143, 143, 157, 0.28)" strokeDasharray="3 3" />
