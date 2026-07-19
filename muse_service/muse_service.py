@@ -114,6 +114,36 @@ def alpha_beta_ratio(window: np.ndarray) -> float | None:
     return float(np.mean(ratios)) if ratios else None
 
 
+# Muse EEG channel order (from muselsl, AUX dropped): TP9, AF7, AF8, TP10.
+# AF7 = LEFT frontal, AF8 = RIGHT frontal -- the pair used for frontal alpha
+# asymmetry (Davidson's approach/withdrawal model of emotion).
+CH_AF7_LEFT = 1
+CH_AF8_RIGHT = 2
+
+
+def frontal_alpha_asymmetry(window: np.ndarray) -> float | None:
+    """Frontal alpha asymmetry (FAA): the standard EEG index of approach vs.
+    withdrawal, i.e. liking vs. disliking a stimulus (Davidson et al.).
+
+    Alpha power is INVERSELY related to cortical activity, so with
+        FAA = ln(alpha_right / AF8) - ln(alpha_left / AF7)
+      FAA > 0  -> LESS left alpha -> MORE left-frontal activation -> approach / liking
+      FAA < 0  -> more right activation -> withdrawal / disliking
+
+    The absolute value is dominated by anatomy + electrode placement, so it is only
+    meaningful RELATIVE to the same listener's baseline (handled downstream)."""
+    if window.shape[0] < int(EEG_SFREQ) or window.shape[1] <= CH_AF8_RIGHT:
+        return None
+    powers: dict[str, float] = {}
+    for name, idx in (("left", CH_AF7_LEFT), ("right", CH_AF8_RIGHT)):
+        sig = window[:, idx] - np.mean(window[:, idx])
+        freqs, psd = welch(sig, fs=EEG_SFREQ, nperseg=min(512, len(sig)))
+        powers[name] = band_power(freqs, psd, ALPHA_BAND)
+    if powers["left"] <= 0 or powers["right"] <= 0:
+        return None
+    return round(float(np.log(powers["right"]) - np.log(powers["left"])), 4)
+
+
 # Canonical EEG bands (Hz). Gamma is capped low -- consumer EEG at 256 Hz is
 # noisy up top, and the Muse's useful range tops out ~44 Hz.
 BANDS: dict[str, tuple[float, float]] = {
@@ -141,6 +171,24 @@ def band_powers(window: np.ndarray) -> dict[str, float] | None:
     if total <= 0:
         return None
     return {b: round(totals[b] / total, 4) for b in BANDS}
+
+
+def frontal_theta(window: np.ndarray) -> float | None:
+    """Relative frontal theta power (4-8 Hz) at AF7+AF8, as a fraction of total
+    frontal power. Frontal-midline theta RISES with deep emotional absorption and
+    "being moved" -- the marker that a listener is aesthetically engaged even when
+    valence is negative (the sad-music / tragedy paradox). Complements FAA, which
+    only sees like/dislike, not appreciation."""
+    if window.shape[0] < int(EEG_SFREQ) or window.shape[1] <= CH_AF8_RIGHT:
+        return None
+    vals: list[float] = []
+    for idx in (CH_AF7_LEFT, CH_AF8_RIGHT):
+        sig = window[:, idx] - np.mean(window[:, idx])
+        freqs, psd = welch(sig, fs=EEG_SFREQ, nperseg=min(512, len(sig)))
+        total = sum(band_power(freqs, psd, rng) for rng in BANDS.values())
+        if total > 0:
+            vals.append(band_power(freqs, psd, BANDS["theta"]) / total)
+    return round(float(np.mean(vals)), 4) if vals else None
 
 
 def _sim_band_powers() -> dict[str, float]:
@@ -250,6 +298,7 @@ def run(backend: str, token: str | None, cli_song_id: str | None, address: str |
     if not simulate:
         inlet, acc_inlet, gyro_inlet = connect_lsl(address)
     sim_move = 0.15  # latent movement for --simulate
+    sim_faa = 0.0    # latent frontal-asymmetry for --simulate
 
     # No token -> "preview" mode: still connect and compute band power so the
     # headband can be verified and its live signal shown, but nothing is posted
@@ -314,6 +363,8 @@ def run(backend: str, token: str | None, cli_song_id: str | None, address: str |
             window = np.asarray(buf, dtype=float)
             ratio = alpha_beta_ratio(window)
             bands = band_powers(window)
+            asymmetry = frontal_alpha_asymmetry(window)
+            theta_f = frontal_theta(window)
             movement = movement_intensity(
                 np.asarray(acc_buf, dtype=float) if acc_buf else None,
                 np.asarray(gyro_buf, dtype=float) if gyro_buf else None,
@@ -323,8 +374,12 @@ def run(backend: str, token: str | None, cli_song_id: str | None, address: str |
                 bands = _sim_band_powers()
                 sim_move = float(np.clip(sim_move + np.random.randn() * 0.12, 0.0, 1.0))
                 movement = round(sim_move, 4)
+                sim_faa = float(np.clip(sim_faa + np.random.randn() * 0.08, -1.0, 1.0))
+                asymmetry = round(sim_faa, 4)
+                theta_f = bands["theta"]
             if ratio is not None:
-                emit_status("reading", ratio=round(ratio, 4), bands=bands, movement=movement)
+                emit_status("reading", ratio=round(ratio, 4), bands=bands,
+                            movement=movement, asymmetry=asymmetry, frontal_theta=theta_f)
                 last_reading_sec = now_sec
                 last_ratio = ratio
                 # Motion diagnostic (~every 5 s): confirm the IMU is live and moving.

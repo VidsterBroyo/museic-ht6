@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, audioUrl } from "../api";
+import { setEnjoymentMood } from "../enjoyment";
 import { annotatePoint } from "./signals";
 import type { SensorReading, Song, SongGraphPoint, SongGraphResponse } from "../types";
 import { StyleInjector } from "./StyleInjector";
@@ -110,6 +111,7 @@ export default function Feed({ userId }: { userId: string }) {
       void flush(currentRef.current);
       void window.museic.stopCapture();
       void window.museic.setNowPlaying(null);
+      setEnjoymentMood(null);
     };
   }, [flush]);
 
@@ -120,6 +122,7 @@ export default function Feed({ userId }: { userId: string }) {
     currentRef.current = null;
     setCurrent(null);
     await window.museic.setNowPlaying(null);
+    setEnjoymentMood(null);
   }, [flush]);
 
   const play = useCallback(
@@ -151,6 +154,7 @@ export default function Feed({ userId }: { userId: string }) {
       currentRef.current = song.song_id;
       setCurrent(song.song_id);
       await window.museic.setNowPlaying(song.song_id); // Muse service beacon
+      setEnjoymentMood(song.llm_tags?.mood ?? null);   // adapt enjoyment to genre/mood
       if (!captureMode) {
         const { mode } = await window.museic.startCapture();
         setCaptureMode(mode);

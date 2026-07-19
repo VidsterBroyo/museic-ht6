@@ -27,6 +27,8 @@ export type MuseStatus =
       lastRatio?: number | null;
       bands?: Record<string, number> | null;
       movement?: number | null;
+      asymmetry?: number | null;
+      frontalTheta?: number | null;
       posted?: number;
     }
   | { state: "error"; message: string };
@@ -156,6 +158,8 @@ function handleLine(line: string): void {
         bands: (msg.bands as Record<string, number> | null) ?? prev?.bands ?? null,
         // Explicit null (stale IMU) must clear, not stick to the last value.
         movement: (msg.movement as number | null | undefined) ?? null,
+        asymmetry: (msg.asymmetry as number | null | undefined) ?? null,
+        frontalTheta: (msg.frontal_theta as number | null | undefined) ?? null,
         posted: postedTotal,
       });
       break;

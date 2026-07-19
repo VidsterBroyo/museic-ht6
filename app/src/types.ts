@@ -33,6 +33,8 @@ export type MuseStatus =
       lastRatio?: number | null;
       bands?: Record<string, number> | null;
       movement?: number | null;
+      asymmetry?: number | null;
+      frontalTheta?: number | null;
       posted?: number;
     }
   | { state: "error"; message: string };

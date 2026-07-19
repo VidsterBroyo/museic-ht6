@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
 import MuseControl from "./MuseControl";
 import type { MuseStatus, SensorReading, ValidationStatus } from "../types";
-import { EXPRESSION_VALENCE, clip01, computeEnjoyment, type EnjoyInputs } from "../enjoyment";
+import { EXPRESSION_VALENCE, clip01, createEnjoymentScorer, getEnjoymentMood, type EnjoyInputs, type EnjoymentScorer, type EnjoyResult } from "../enjoyment";
 
 /**
  * Live "Signals" dashboard — a viewing/testing harness that plots every raw
@@ -26,6 +26,9 @@ interface Sample {
   beta: number | null;
   gamma: number | null;
   muse_movement: number | null; // head motion from the Muse IMU (accel + gyro)
+  asymmetry: number | null; // raw frontal alpha asymmetry (anatomy/contact-biased; not displayed)
+  frontal_theta: number | null; // frontal theta: emotional absorption / being moved
+  liking: number | null; // baseline-relative FAA (0.5 = neutral); what the score uses
   enjoyment: number | null; // experimental fused score
 }
 
@@ -88,6 +91,8 @@ function stepMuseSim(): Partial<Sample> {
     gamma: 0.2 + Math.random() * 0.15,
     alpha_beta_ratio: Math.round((alpha / beta) * 100) / 100,
     muse_movement: clip01(0.1 + Math.random() * 0.3),
+    asymmetry: Math.round((Math.random() - 0.5) * 1.2 * 100) / 100,
+    frontal_theta: Math.round((0.05 + Math.random() * 0.1) * 1000) / 1000,
   };
 }
 
@@ -99,6 +104,8 @@ const EMPTY_MUSE = {
   beta: null as number | null,
   gamma: null as number | null,
   muse_movement: null as number | null,
+  asymmetry: null as number | null,
+  frontal_theta: null as number | null,
 };
 
 type MetricKey = keyof Omit<Sample, "t">;
@@ -135,10 +142,17 @@ const METRICS: MetricDef[] = [
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Fast; perception. Noisy on consumer EEG." },
   { key: "muse_movement", label: "Head movement", unit: "%", source: "muse", color: "#4bc0c0",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Head-bop / nod from the Muse accelerometer + gyroscope." },
+  { key: "liking", label: "Liking (vs your baseline)", unit: "/100", source: "muse", color: "#7ac74f",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}`,
+    explain: "Frontal alpha asymmetry, scored against YOUR baseline. 50 = neutral, >50 = approach/liking, <50 = withdrawal. (Raw FAA is anatomy/contact-biased, so absolute sign is meaningless.)" },
+  { key: "frontal_theta", label: "Absorption (frontal θ)", unit: "%", source: "muse", color: "#b06fe0",
+    domain: ["auto", "auto"], format: (v) => `${Math.round(v * 100)}%`,
+    explain: "Frontal theta (AF7/AF8). Rises with deep emotional absorption / being moved — how sad music is enjoyed." },
 ];
 
 export default function MetricsView() {
   const [samples, setSamples] = useState<Sample[]>([]);
+  const [parts, setParts] = useState<EnjoyResult | null>(null); // live enjoyment breakdown (debug)
   const [cameraMode, setCameraMode] = useState<"presage" | "simulated" | null>(null);
   const [expression, setExpression] = useState<{ label: string; conf: number } | null>(null);
   const [autofill, setAutofill] = useState(true);
@@ -149,7 +163,8 @@ export default function MetricsView() {
 
   const startRef = useRef<number | null>(null);
   const museLatestRef = useRef({ ...EMPTY_MUSE });
-  const enjoyRef = useRef<EnjoyInputs>({ valence: null, movement: null, ratio: null, hr: null });
+  const enjoyRef = useRef<EnjoyInputs>({ valence: null, movement: null, ratio: null, hr: null, asymmetry: null, frontalTheta: null, mood: null });
+  const scorerRef = useRef<EnjoymentScorer>(createEnjoymentScorer());
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -169,11 +184,12 @@ export default function MetricsView() {
   const push = useCallback((partial: Partial<Sample>) => {
     if (startRef.current === null) startRef.current = Date.now();
     const t = Math.round(((Date.now() - startRef.current) / 1000) * 10) / 10;
-    const enjoyment = computeEnjoyment(enjoyRef.current);
+    const res = scorerRef.current({ ...enjoyRef.current, mood: getEnjoymentMood() });
+    setParts(res);
     setSamples((prev) => {
       const next = [
         ...prev,
-        { t, hr_bpm: null, hrv_rmssd: null, stress_index: null, movement_intensity: null, ...museLatestRef.current, ...partial, enjoyment },
+        { t, hr_bpm: null, hrv_rmssd: null, stress_index: null, movement_intensity: null, ...museLatestRef.current, ...partial, liking: res.liking, enjoyment: res.score },
       ];
       return next.length > WINDOW ? next.slice(next.length - WINDOW) : next;
     });
@@ -217,6 +233,8 @@ export default function MetricsView() {
         upd.muse_movement = status.movement;
         museMoveRef.current = status.movement;
       }
+      if (status.asymmetry != null) upd.asymmetry = status.asymmetry;
+      if (status.frontalTheta != null) upd.frontal_theta = status.frontalTheta;
       if (status.bands) {
         for (const k of ["delta", "theta", "alpha", "beta", "gamma"] as const) {
           if (status.bands[k] != null) upd[k] = status.bands[k];
@@ -225,11 +243,13 @@ export default function MetricsView() {
       if (Object.keys(upd).length === 0) return;
       lastMuseRef.current = Date.now(); // real data arrived
       museLatestRef.current = { ...museLatestRef.current, ...upd };
-      // Feed EEG engagement + head movement into the enjoyment score.
+      // Feed EEG engagement, liking (asymmetry) + head movement into enjoyment.
       const ratio = upd.alpha_beta_ratio ?? (upd.alpha != null && upd.beta ? upd.alpha / upd.beta : null);
       enjoyRef.current = {
         ...enjoyRef.current,
         ratio: ratio ?? enjoyRef.current.ratio,
+        asymmetry: upd.asymmetry ?? enjoyRef.current.asymmetry,
+        frontalTheta: upd.frontal_theta ?? enjoyRef.current.frontalTheta,
         movement: bestMovement(),
       };
       push(upd);
@@ -266,6 +286,8 @@ export default function MetricsView() {
         enjoyRef.current = {
           ...enjoyRef.current,
           ratio: upd.alpha_beta_ratio ?? enjoyRef.current.ratio,
+          asymmetry: upd.asymmetry ?? enjoyRef.current.asymmetry,
+          frontalTheta: upd.frontal_theta ?? enjoyRef.current.frontalTheta,
           movement: bestMovement(),
         };
         push(upd);
@@ -398,7 +420,7 @@ export default function MetricsView() {
         </div>
       )}
 
-      <EnjoymentCard samples={samples} value={latest ? latest.enjoyment : null} />
+      <EnjoymentCard samples={samples} value={latest ? latest.enjoyment : null} parts={parts} />
 
       <div className="metrics-group-title">Camera</div>
       <div className="metrics-grid">
@@ -441,12 +463,27 @@ function adaptiveDomain(values: number[]): [number, number] {
   return [min - pad, max + pad];
 }
 
+// Light centred moving-average for the plotted line only (display, not stored).
+// Rounds off per-frame jitter without lagging like a time-based EMA would at 30 fps.
+type Pt = { t: number; v: number | null };
+function smoothSeries(data: Pt[], w = 3): Pt[] {
+  return data.map((d, i) => {
+    if (d.v == null) return d;
+    let sum = 0, n = 0;
+    for (let j = Math.max(0, i - w); j <= Math.min(data.length - 1, i + w); j++) {
+      const vv = data[j].v;
+      if (vv != null) { sum += vv; n++; }
+    }
+    return { t: d.t, v: n ? sum / n : d.v };
+  });
+}
+
 /**
  * Prominent, experimental "enjoyment" readout. Fuses positive valence, groove,
- * EEG engagement and arousal into one 0..1 curve (see computeEnjoyment).
+ * EEG engagement and arousal into one 0..1 curve (see createEnjoymentScorer).
  */
-function EnjoymentCard({ samples, value }: { samples: Sample[]; value: number | null }) {
-  const data = samples.map((s) => ({ t: s.t, v: s.enjoyment }));
+function EnjoymentCard({ samples, value, parts }: { samples: Sample[]; value: number | null; parts: EnjoyResult | null }) {
+  const data = smoothSeries(samples.map((s) => ({ t: s.t, v: s.enjoyment })));
   const hasData = data.some((d) => d.v != null);
   const pct = value != null ? Math.round(value * 100) : null;
   return (
@@ -479,15 +516,28 @@ function EnjoymentCard({ samples, value }: { samples: Sample[]; value: number | 
           <div className="metric-empty small muted">start the camera or Muse</div>
         )}
       </div>
+      {parts && (
+        <div className="enjoy-parts small muted">
+          {([
+            ["liking", parts.liking], ["engage", parts.engagement], ["absorb", parts.absorption],
+            ["groove", parts.groove], ["chills", parts.chills],
+            ["pleasure", parts.pleasure], ["moved", parts.moved],
+          ] as [string, number | null][]).map(([k, v]) => (
+            <span key={k} className="enjoy-part">
+              {k} <b>{v == null ? "—" : Math.round(v * 100)}</b>
+            </span>
+          ))}
+        </div>
+      )}
       <p className="metric-explain small muted">
-        Core = 0.50·EEG-engagement + 0.30·movement + 0.20·HR-arousal (movement prefers Muse head-motion over the camera). Only a smile nudges it up (≤ +0.15); negative faces are ignored (detector false-defaults to sad at rest).
+        Live 0–100 components (50 = your baseline). If a component sits at ~50 it isn't moving — that signal is flat, not the maths. Two routes, blended by mood: <b>pleasure</b> (liking + groove + engage) for upbeat, <b>moved</b> (absorb + engage + chills) for sad. EEG/HR are baseline-relative; movement is absolute.
       </p>
     </div>
   );
 }
 
 function MetricCard({ def, samples, value }: { def: MetricDef; samples: Sample[]; value: number | null }) {
-  const data = samples.map((s) => ({ t: s.t, v: s[def.key] }));
+  const data = smoothSeries(samples.map((s) => ({ t: s.t, v: s[def.key] })));
   const values = data.map((d) => d.v).filter((v): v is number => v != null);
   const hasData = values.length > 0;
   const domain = hasData ? adaptiveDomain(values) : def.domain;
