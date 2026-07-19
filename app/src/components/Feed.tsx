@@ -254,8 +254,8 @@ export default function Feed({ userId }: { userId: string }) {
                 )}
               </div>
               <div className="song-meta">
-                <h2 className="song-title">{song.title}</h2>
-                <p className="song-artist">{song.artist || "unknown artist"}</p>
+                <h2 className="meta-title">{song.artist || "unknown artist"}</h2>
+                <p className="meta-artist">{song.title}</p>
                 <p className="muted small">
                   {song.tempo_bpm ? `${song.tempo_bpm} bpm` : ""} {song.key ? `· ${song.key}` : ""}{" "}
                   {song.duration_s ? `· ${Math.floor(song.duration_s / 60)}:${String(song.duration_s % 60).padStart(2, "0")}` : ""}

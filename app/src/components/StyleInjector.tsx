@@ -180,11 +180,11 @@ input[type="text"] {
   height: 100%;
   object-fit: cover;
 }
-.song-card .song-title {
+.song-card .meta-title {
   font-size: 1.8rem;
   margin-bottom: 4px;
 }
-.song-card .song-artist {
+.song-card .meta-artist {
   font-size: 1.1rem;
   color: var(--text-muted);
   margin-bottom: 16px;
