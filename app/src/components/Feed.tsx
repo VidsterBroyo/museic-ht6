@@ -38,6 +38,7 @@ function graphSong(song: Song): SongGraphResponse["song"] {
 export default function Feed({ userId, active = true }: { userId: string; active?: boolean }) {
   const [songs, setSongs] = useState<Song[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentSongIndex, setCurrentSongIndex] = useState(0);
   const [current, setCurrent] = useState<string | null>(null);
   const [captureMode, setCaptureMode] = useState<"presage" | "simulated" | null>(null);
   const [lastReading, setLastReading] = useState<SensorReading | null>(null);
@@ -226,8 +227,8 @@ export default function Feed({ userId, active = true }: { userId: string; active
   }, [currentSong, likedSongs]);
 
   if (error) return <div className="pad error">{error}</div>;
-  if (!songs || !currentSong) return <div className="pad muted">loading songs…</div>;
-  if (songs.length === 0 || !currentSong)
+  if (!songs) return <div className="pad muted">loading songs…</div>;
+  if (songs.length === 0)
     return (
       <div className="pad">
         <h2>No songs yet</h2>
@@ -236,6 +237,7 @@ export default function Feed({ userId, active = true }: { userId: string; active
         </p>
       </div>
     );
+  if (!currentSong) return <div className="pad muted">loading songs…</div>;
 
   return (
     <div className="feed-wrap">

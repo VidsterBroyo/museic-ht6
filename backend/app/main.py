@@ -55,7 +55,7 @@ def _startup() -> None:
 
 class Reading(BaseModel):
     t: int = Field(ge=0, description="second offset into the song")
-    raw: dict[str, Any] = Field(default_factory=dict) 
+    raw: dict[str, Any] = Field(default_factory=dict)
     movement_intensity: Optional[float] = None
     ts: Optional[datetime] = None
 
@@ -67,7 +67,7 @@ class ReactionBatch(BaseModel):
 
 
 def _session_hr_baseline(user_id: str) -> Optional[float]:
-    """Mean pulse over the user's last hour of readings -- the slow-trend 
+    """Mean pulse over the user's last hour of readings -- the slow-trend
     baseline is continuous across the session, not reset per song (§5)."""
     since = datetime.now(timezone.utc) - timedelta(hours=1)
     rows = db.reactions.find(

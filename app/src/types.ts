@@ -53,6 +53,7 @@ export interface Song {
   sections: { start_s: number; end_s: number; label: string }[];
   album_art_b64: string | null;
   album_art_mime?: string | null;
+  likes?: number;
 }
 
 export interface GraphPoint {

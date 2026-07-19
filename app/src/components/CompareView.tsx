@@ -76,16 +76,16 @@ export default function CompareView({ selfId }: { selfId: string }) {
               </h3>
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={s.points} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                  <CartesianGrid stroke="#2a2a35" strokeDasharray="3 3" />
-                  <XAxis dataKey="t" stroke="#888" />
-                  <YAxis domain={[0, 1]} stroke="#888" />
+                  <CartesianGrid stroke="rgba(63, 102, 52, 0.32)" strokeDasharray="3 3" />
+                  <XAxis dataKey="t" stroke="rgba(36, 64, 31, 0.84)" />
+                  <YAxis domain={[0, 1]} stroke="rgba(36, 64, 31, 0.84)" />
                   <Tooltip
-                    contentStyle={{ background: "#111119", border: "1px solid #444" }}
+                    contentStyle={{ background: "#ffffff", border: "1px solid rgba(63, 102, 52, 0.42)", color: "#24401f" }}
                     labelFormatter={(t) => `t = ${t}s`}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="arousal_a" stroke="#ff00a0" dot={false} strokeWidth={2} name="you" />
-                  <Line type="monotone" dataKey="arousal_b" stroke="#ffee00" dot={false} strokeWidth={2} name="them" />
+                  <Line type="monotone" dataKey="arousal_a" stroke="#3F6634" dot={false} strokeWidth={2} name="you" />
+                  <Line type="monotone" dataKey="arousal_b" stroke="#52FFEE" dot={false} strokeWidth={2} name="them" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
