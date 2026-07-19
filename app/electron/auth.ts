@@ -263,22 +263,21 @@ async function getMyAccountToken(): Promise<string | null> {
   return ((await resp.json()) as { access_token: string }).access_token;
 }
 
-/** Start the Connect Spotify flow. First obtain a My Account API token: try a
- * silent refresh-token exchange (needs MRRT), and if that is rejected -- e.g.
- * the My Account API requires interactive/step-up auth that a backchannel
- * exchange "cannot be challenged" for -- fall back to an interactive authorize
- * in the system browser. Completion always arrives via museic://callback. */
+/** Start the Connect Spotify flow by acquiring a My Account API token via an
+ * interactive browser authorize, so the subsequent Connected Accounts connect
+ * page runs inside an authenticated Auth0 browser session. Completion arrives
+ * via museic://callback (My Account code -> connect URI -> connect_code). */
 export async function beginConnectSpotify(): Promise<void> {
   if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
     throw new Error("AUTH0_DOMAIN / AUTH0_CLIENT_ID not configured (repo-root .env)");
   }
-  const myAccountToken = await getMyAccountToken();
-  if (myAccountToken) {
-    await requestConnect(myAccountToken);
-    return;
-  }
-  // Silent path unavailable (no MRRT, or the API requires interactive/step-up
-  // auth). Get the My Account token interactively; handleCallbackUrl continues.
+  // The Connected Accounts connect page runs in the system browser and must run
+  // inside a fresh, authenticated Auth0 session. Obtaining the My Account token
+  // silently (refresh-token exchange in this process) leaves the browser without
+  // that session, so Auth0 rejects the connect page with "forbidden". Always
+  // acquire the token interactively; handleCallbackUrl then opens the connect URI
+  // in that same authenticated browser.
+  console.log("[connect] starting interactive My Account authorize");
   beginMyAccountAuthorize();
 }
 
@@ -300,7 +299,9 @@ function beginMyAccountAuthorize(): void {
     code_challenge_method: "S256",
     state,
   });
-  void shell.openExternal(`https://${AUTH0_DOMAIN}/authorize?${params.toString()}`);
+  const authorizeUrl = `https://${AUTH0_DOMAIN}/authorize?${params.toString()}`;
+  console.log("[connect] interactive My Account authorize URL:", authorizeUrl);
+  void shell.openExternal(authorizeUrl);
 }
 
 /** Ask the My Account API for a connect URI (using the given My Account token)
@@ -323,17 +324,32 @@ async function requestConnect(myAccountToken: string): Promise<void> {
       scopes: ["openid", "offline_access", ...SPOTIFY_CONNECTION_SCOPE.split(" ")],
     }),
   });
+  console.log("[connect] connect POST status:", resp.status);
   if (!resp.ok) {
     throw new Error(
       `Auth0 connected-accounts/connect failed: ${resp.status} ${(await resp.text()).slice(0, 300)}`,
     );
   }
-  const body = (await resp.json()) as { connect_uri?: string; auth_session?: string };
-  if (!body.connect_uri || !body.auth_session) {
-    throw new Error("Auth0 connected-accounts/connect returned an unexpected response.");
+  const body = (await resp.json()) as {
+    connect_uri?: string;
+    auth_session?: string;
+    ticket?: string;
+    connect_params?: { ticket?: string };
+  };
+  console.log("[connect] connect response body:", JSON.stringify(body));
+  // Auth0 returns a base connect_uri plus a ticket; the interactive page needs
+  // the ticket as a query param, otherwise it 400s with a generic
+  // "one or more validation errors occurred".
+  const ticket = body.ticket ?? body.connect_params?.ticket;
+  if (!body.connect_uri || !body.auth_session || !ticket) {
+    throw new Error(
+      "Auth0 connected-accounts/connect returned an unexpected response (missing connect_uri/auth_session/ticket).",
+    );
   }
+  const connectUrl = new URL(body.connect_uri);
+  connectUrl.searchParams.set("ticket", ticket);
   pendingConnect = { verifier, authSession: body.auth_session, myAccountToken };
-  void shell.openExternal(body.connect_uri);
+  void shell.openExternal(connectUrl.toString());
 }
 
 /** Finish the Connect Spotify flow with the connect_code from the callback. */

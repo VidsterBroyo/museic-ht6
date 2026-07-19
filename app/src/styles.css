@@ -255,7 +255,7 @@ h1, h2, h3,
   color: var(--text); border-bottom-color: var(--accent);
   font-weight: 600; /* beat button.active { font-weight: 700 } */
 }
-.user-box { display: flex; align-items: center; gap: 8px; }
+.user-box { display: flex; align-items: center; gap: 21px; }
 .user-menu { position: relative; }
 .avatar-btn { padding: 0; border: none; background: none; border-radius: 50%; line-height: 0; }
 .avatar-btn:hover { background: none; }
@@ -351,7 +351,7 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .song-card h2 { font-size: 2rem; margin: 0 0 6px; }
 .song-actions { display: flex; gap: 12px; }
 
-.tags { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+.tags { display: flex; gap: 10px 25px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
 .tag {
   background: rgba(255, 93, 143, 0.16); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 2px 10px; font-size: 0.75rem; color: var(--text);
@@ -382,6 +382,7 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
   margin: 16px 0; padding: 10px 16px;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
   font-style: normal; line-height: 1.55;
+  white-space: pre-line;
 }
 .narrative strong { font-weight: 700; color: var(--text); }
 .profile-userid { margin-top: 32px; opacity: 0.7; }
@@ -552,9 +553,8 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .friend-row.selected .friend-row-check { color: var(--accent); }
 .compare-form { display: grid; gap: 10px; }
 .compare-form input { width: 100%; min-width: 0; }
-.compare-remove {
-  margin-top: 10px; background: transparent; color: var(--muted);
-}
+.compare-actions { margin-top: 10px; display: flex; gap: 10px; }
+.compare-remove { background: transparent; color: var(--muted); }
 .compare-remove:hover { color: var(--text); }
 .compare-empty { margin: 4px 0; }
 .compare-result-note { margin: 18px 0; }
@@ -586,7 +586,6 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 }
 @media (max-width: 760px) {
   .compare-head { flex-direction: column; }
-  .compare-head .primary { width: 100%; }
   .compare-grid { grid-template-columns: 1fr; }
 }
 

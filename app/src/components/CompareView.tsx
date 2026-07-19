@@ -72,10 +72,6 @@ export default function CompareView({ selfId }: { selfId: string }) {
     }
   }, [selfId]);
 
-  useEffect(() => {
-    window.localStorage.setItem(friendStorageKey(selfId), JSON.stringify(friends));
-  }, [friends, selfId]);
-
   const selectedFriend = useMemo(
     () => friends.find((friend) => friend.id === selectedFriendId) ?? null,
     [friends, selectedFriendId],
@@ -87,7 +83,9 @@ export default function CompareView({ selfId }: { selfId: string }) {
     const name = friendName.trim() || id;
     setFriends((prev) => {
       const next = prev.filter((friend) => friend.id !== id);
-      return [...next, { id, name }].sort((a, b) => a.name.localeCompare(b.name));
+      const merged = [...next, { id, name }].sort((a, b) => a.name.localeCompare(b.name));
+      window.localStorage.setItem(friendStorageKey(selfId), JSON.stringify(merged));
+      return merged;
     });
     setSelectedFriendId(id);
     setFriendName("");
@@ -97,7 +95,11 @@ export default function CompareView({ selfId }: { selfId: string }) {
   };
 
   const removeFriend = (id: string) => {
-    setFriends((prev) => prev.filter((friend) => friend.id !== id));
+    setFriends((prev) => {
+      const next = prev.filter((friend) => friend.id !== id);
+      window.localStorage.setItem(friendStorageKey(selfId), JSON.stringify(next));
+      return next;
+    });
     setSelectedFriendId((current) => {
       if (current !== id) return current;
       const remaining = friends.filter((friend) => friend.id !== id);
@@ -130,14 +132,11 @@ export default function CompareView({ selfId }: { selfId: string }) {
       <StyleInjector />
       <div className="compare-head">
         <div>
-          <h1>Compare with friends</h1>
+          <h1>Wavelength</h1>
           <p className="muted small">
-            You are <code>{selfId}</code> <CopyIdButton text={selfId} />.
+            You are <code>{selfId}</code> <CopyIdButton text={selfId} />
           </p>
         </div>
-        <button className="primary" disabled={!selectedFriend || loading} onClick={() => void run()}>
-          {loading ? "Comparing..." : selectedFriend ? `Compare ${selectedFriend.name}` : "Select a friend"}
-        </button>
       </div>
 
       <div className="compare-grid">
@@ -168,9 +167,14 @@ export default function CompareView({ selfId }: { selfId: string }) {
             )}
           </div>
           {selectedFriend && (
-            <button type="button" className="ghost compare-remove" onClick={() => removeFriend(selectedFriend.id)}>
-              Remove selected
-            </button>
+            <div className="compare-actions">
+              <button type="button" className="ghost compare-remove" onClick={() => removeFriend(selectedFriend.id)}>
+                Remove
+              </button>
+              <button className="primary" disabled={loading} onClick={() => void run()}>
+                {loading ? "Comparing..." : "Compare"}
+              </button>
+            </div>
           )}
         </section>
 
@@ -233,7 +237,6 @@ export default function CompareView({ selfId }: { selfId: string }) {
               </h3>
               <p className="compare-chart-note muted small">
                 X-axis is song time in seconds. Y-axis is normalized arousal from 0 to 1.
-                The blue line is you; the pink line is {selectedFriend?.name ?? "your friend"}.
               </p>
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={s.points} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
@@ -246,7 +249,7 @@ export default function CompareView({ selfId }: { selfId: string }) {
                   />
                   <Legend />
                   <Line type="monotone" dataKey="arousal_a" stroke="#7A9BB8" dot={false} strokeWidth={2} name="you" />
-                  <Line type="monotone" dataKey="arousal_b" stroke="#FF5D8F" dot={false} strokeWidth={2} name="them" />
+                  <Line type="monotone" dataKey="arousal_b" stroke="#FF5D8F" dot={false} strokeWidth={2} name={selectedFriend?.name ?? "them"} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

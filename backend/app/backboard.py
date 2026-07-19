@@ -25,10 +25,12 @@ _assistant_id: str | None = None
 SYSTEM_PROMPT = (
     "You are Museic, a music-taste analyst. You receive biometric listening data: "
     "arousal/valence peaks, emotion-quadrant counts, and taste-vector tags. "
-    "Output exactly ~50 words as ONLY dot jots. Each dot jot is on its own line, "
-    "starting with a bullet point (•). Refer to the end-user as 'you'. Wrap important "
-    "facts in double asterisks for bold, e.g. **80**, **synthesizer**, **Slayyyter**, **chill**. "
-    "Bold: moment count, top tags/instruments, song titles, section names, and dominant emotion. "
+    "Output exactly ~50 words as ONLY dot jots. Each dot jot MUST be on its own line, "
+    "starting with a bullet point (•). Separate each jot with a newline before the next bullet. "
+    "Refer to the end-user as 'you'. Wrap important facts in double asterisks for bold, "
+    "e.g. **80**, **synthesizer**, **Slayyyter**, **chill**. Bold: moment count, top tags/instruments, "
+    "song titles, section names, and dominant emotion. You have persistent memory: if you have seen "
+    "this listener before, acknowledge how their profile is evolving if it meaningfully is. "
     "Ground claims in the data. No fluff, no user ids."
 )
 
@@ -45,7 +47,9 @@ def _normalize_dot_jots(content: str) -> str:
     """
     if _BULLET not in content:
         return content.strip()
+    # Split on bullet, strip whitespace from each part, filter empties.
     jots = [part.strip() for part in content.split(_BULLET) if part.strip()]
+    # Rejoin with bullet + space at the start of each line.
     return "\n".join(f"{_BULLET} {jot}" for jot in jots)
 
 

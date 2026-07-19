@@ -91,7 +91,7 @@ export default function App() {
             <span className="logo-muse">Muse</span>
             <span className="logo-ic">ic</span>
           </h1>
-          <p style={{ fontSize: "1.2rem" }}>Your body already knows your favorite song.</p>
+          <p style={{ fontSize: "1.2rem" }}>Your body already knows your next favorite song.</p>
           <button className="primary" onClick={() => void museic.login()}>
             Log In
           </button>
@@ -126,11 +126,11 @@ export default function App() {
             Profile
           </button>
           <button
-            data-label="Compare"
+            data-label="Wavelength"
             className={view.name === "compare" ? "active" : ""}
             onClick={() => setView({ name: "compare" })}
           >
-            Compare
+            Wavelength
           </button>
           <button
             data-label="Biometrics"
