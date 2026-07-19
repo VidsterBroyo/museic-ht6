@@ -35,6 +35,22 @@ function graphSong(song: Song): SongGraphResponse["song"] {
   };
 }
 
+function getGlowColor(moods: string[] | undefined): string {
+  if (!moods) return "var(--accent-cyan)";
+  const lowerMoods = moods.map(m => m.toLowerCase());
+
+  if (lowerMoods.some(m => ["sad", "melancholic", "somber", "moody"].includes(m))) {
+    return "var(--accent-blue)";
+  }
+  if (lowerMoods.some(m => ["romantic", "love", "sensual"].includes(m))) {
+    return "var(--accent-red)";
+  }
+  if (lowerMoods.some(m => ["dance", "upbeat", "party", "energetic", "hype"].includes(m))) {
+    return "var(--accent-purple)";
+  }
+  return "var(--accent-cyan)";
+}
+
 export default function Feed({ userId, active = true }: { userId: string; active?: boolean }) {
   const [songs, setSongs] = useState<Song[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,12 +60,13 @@ export default function Feed({ userId, active = true }: { userId: string; active
   const [lastReading, setLastReading] = useState<SensorReading | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [graphData, setGraphData] = useState<SongGraphResponse | null>(null);
-  const [likedSongs, setLikedSongs] = useState<Set<string>>(new Set());
+  const [currentSongIndex, setCurrentSongIndex] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bufferRef = useRef<BufferedReading[]>([]);
   const currentRef = useRef<string | null>(null);
   const lastReadingRef = useRef<SensorReading | null>(null);
+  const hudReadingRef = useRef<SensorReading | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
 
@@ -79,7 +96,7 @@ export default function Feed({ userId, active = true }: { userId: string; active
       if (!activeRef.current) return;
       const prevReading = lastReadingRef.current;
       lastReadingRef.current = reading;
-      setLastReading(reading);
+      hudReadingRef.current = reading; // Store latest reading without re-rendering
 
       const audio = audioRef.current;
       const songId = currentRef.current;
@@ -132,6 +149,16 @@ export default function Feed({ userId, active = true }: { userId: string; active
     return () => clearInterval(id);
   }, [flush]);
 
+  // HUD updates at a fixed rate to prevent flickering.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (hudReadingRef.current) {
+        setLastReading(hudReadingRef.current);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
   // Cleanup on unmount: flush + stop capture + clear now-playing beacon.
   useEffect(() => {
     return () => {
@@ -149,12 +176,16 @@ export default function Feed({ userId, active = true }: { userId: string; active
 
     setGraphData({ song: graphSong(currentSong), points: [] }); // Show empty graph immediately.
     api<SongGraphResponse>(`/song-graph/${userId}/${currentSong.song_id}`)
-      .then((data) => setGraphData(data))
-      .catch(() => console.log(`No prior graph data for ${currentSong.song_id}`));
-
-  }, [currentSong, userId, graphData]);
+      .then((data) => {
+        setGraphData(data);
+      })
+      .catch((e) => {
+        console.log(`No prior graph data for ${currentSong.song_id}`);
+      });
+  }, [currentSong, userId, graphData?.song.song_id]);
 
   const stopCurrent = useCallback(async () => {
+    audioRef.current?.pause();
     await flush(currentRef.current);
     currentRef.current = null;
     setCurrent(null);
@@ -205,26 +236,14 @@ export default function Feed({ userId, active = true }: { userId: string; active
     }
   }, [songs, currentSongIndex, stopCurrent]);
 
-  const shuffle = useCallback(() => {
-    if (!songs) return;
-    void stopCurrent();
-    const shuffled = [...songs].sort(() => Math.random() - 0.5);
-    setSongs(shuffled);
-    setCurrentSongIndex(0);
-  }, [songs, stopCurrent]);
-
-  const like = useCallback(async () => {
-    if (!currentSong || likedSongs.has(currentSong.song_id)) return;
-    try {
-      const { likes } = await api<{ likes: number }>(`/songs/${currentSong.song_id}/like`, { method: "POST" });
-      setLikedSongs((prev) => new Set(prev).add(currentSong.song_id));
-      setSongs((prevSongs) =>
-        prevSongs?.map((s) => (s.song_id === currentSong.song_id ? { ...s, likes } : s)) ?? null
-      );
-    } catch (e) {
-      console.error("Failed to like song", e);
-    }
-  }, [currentSong, likedSongs]);
+  const glowColor = currentSong ? getGlowColor(currentSong.llm_tags?.mood) : "var(--accent-cyan)";
+  const beatDuration = currentSong?.tempo_bpm
+    ? `${(60 / currentSong.tempo_bpm).toFixed(2)}s`
+    : "0.5s";
+  const viewStyle = {
+    "--glow-color": glowColor,
+    "--beat-duration": beatDuration,
+  } as React.CSSProperties;
 
   if (error) return <div className="pad error">{error}</div>;
   if (!songs) return <div className="pad muted">loading songs…</div>;
@@ -260,8 +279,25 @@ export default function Feed({ userId, active = true }: { userId: string; active
           {((lastReading.movement_intensity ?? 0) * 100).toFixed(0)}%
         </div>
       )}
-      <div className={`song-view ${current === currentSong.song_id ? "active" : ""} ${current === currentSong.song_id && isAudioPlaying ? "is-playing" : ""}`}>
+      <div
+        className={`song-view ${current === currentSong.song_id ? "active" : ""} ${
+          current === currentSong.song_id && isAudioPlaying ? "is-playing" : ""
+        }`}
+        style={viewStyle}
+      >
         <div className="song-album-art">
+          <div className="sound-waves">
+            {Array.from({ length: 25 }).map((_, i) => (
+              <div
+                key={i}
+                className="wave-bar"
+                style={{
+                  animationDuration: currentSong.tempo_bpm ? `${(60 / currentSong.tempo_bpm).toFixed(2)}s` : "0.5s",
+                  animationDelay: `${(Math.random() * -0.5).toFixed(2)}s`,
+                }}
+              />
+            ))}
+          </div>
           {currentSong.album_art_b64 ? (
             <img src={`data:${currentSong.album_art_mime || "image/jpeg"};base64,${currentSong.album_art_b64}`} alt={`Album art for ${currentSong.title}`} />
           ) : (
@@ -278,7 +314,6 @@ export default function Feed({ userId, active = true }: { userId: string; active
             {currentSong.duration_s ? `· ${Math.floor(currentSong.duration_s / 60)}:${String(currentSong.duration_s % 60).padStart(2, "0")}` : ""}
           </p>
           <div className="meta-feedback">
-            <span className="like-count">♥ {currentSong.likes ?? 0}</span>
             {currentSong.llm_tags?.mood && (
               <div className="tags">
                 {currentSong.llm_tags.mood.map((m) => (
@@ -292,13 +327,11 @@ export default function Feed({ userId, active = true }: { userId: string; active
         </div>
 
         <div className="nav-panel">
-          <button onClick={shuffle} title="Shuffle playlist">🔀 Shuffle</button>
           <button onClick={() => navigate("prev")} disabled={currentSongIndex === 0}>⏮ Prev</button>
           <button className="play-button" onClick={() => void play()}>
             {current === currentSong.song_id && isAudioPlaying ? "❚❚" : "▶"}
           </button>
           <button onClick={() => navigate("next")} disabled={currentSongIndex === songs.length - 1}>Next ⏭</button>
-          <button onClick={like} disabled={likedSongs.has(currentSong.song_id)} title="Like song">👍 Like</button>
         </div>
 
         <div className="chart-box">

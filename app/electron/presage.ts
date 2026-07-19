@@ -187,6 +187,10 @@ function startRealCapture(
     sdk.on("error", (code, message, retryable) => {
       console.error("Presage SDK error", code, message, "retryable=", retryable);
       onStatus({ code: code || -1, hint: message ? `Presage error: ${message}` : "Presage SDK error" });
+      if (!retryable) {
+        console.error("Non-retryable Presage error, stopping capture.");
+        stopCapture();
+      }
     });
 
     sdk.useCamera({

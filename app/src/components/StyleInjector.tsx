@@ -6,6 +6,16 @@ export function StyleInjector() {
   return (
     <style>
       {`
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.05); }
+}
+
+@keyframes dance {
+  0%, 100% { transform: scaleY(0.1); }
+  50% { transform: scaleY(1.0); }
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -160,8 +170,27 @@ input[type="text"] {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  overflow: hidden;
+  position: relative; /* for pseudo-elements */
   box-shadow: 0 10px 30px rgba(63, 102, 52, 0.16);
+}
+.song-album-art::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--glow-color, var(--accent-cyan));
+  box-shadow: 0 0 60px 20px var(--glow-color, var(--accent-cyan));
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out;
+  animation-name: pulse;
+  animation-duration: var(--beat-duration, 0.5s);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-play-state: paused;
 }
 .song-album-art::after {
   content: '';
@@ -175,10 +204,35 @@ input[type="text"] {
   /* The parent is a flex container with align/justify center, so this is already centered */
   z-index: 1; /* Ensure it's on top of the image */
 }
+.sound-waves {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 6px;
+  z-index: 0;
+  opacity: 0.15;
+  transform: scale(1.1);
+}
+.wave-bar {
+  width: 8px;
+  height: 90%;
+  background: var(--accent-cyan);
+  border-radius: 4px;
+  animation-name: dance;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-play-state: paused;
+}
 .song-album-art img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: 50%;
 }
 .song-view .meta-title {
   font-size: 1.8rem;
@@ -204,7 +258,9 @@ input[type="text"] {
 .nav-panel {
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-around;
+  width: 400px;
+  max-width: 90%;
   background: rgba(26, 26, 46, 0.7);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -243,6 +299,13 @@ input[type="text"] {
 }
 .song-view.active.is-playing .song-album-art {
   animation-play-state: running;
+}
+.song-view.is-playing .wave-bar {
+  animation-play-state: running;
+}
+.song-view.is-playing .song-album-art::before {
+  animation-play-state: running;
+  opacity: 0.15;
 }
 
 /* ProfileView.tsx */
