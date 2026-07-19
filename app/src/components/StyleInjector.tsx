@@ -21,12 +21,26 @@ export function StyleInjector() {
   --accent-yellow: #ffee00;
   --accent-purple: #a100ff;
   --border-color: #2a2a35;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-sans: "Zalando Sans", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 body {
   background-color: var(--bg-main);
   color: var(--text-main);
+  font-family: var(--font-sans);
+}
+
+body,
+button,
+input,
+textarea,
+select,
+code,
+pre,
+blockquote,
+svg text,
+.recharts-wrapper,
+.recharts-wrapper * {
   font-family: var(--font-sans);
 }
 
