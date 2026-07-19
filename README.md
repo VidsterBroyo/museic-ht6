@@ -6,7 +6,7 @@
     Museic
 </h1>
 
-<div align = "center"> A ... </div>
+<div align = "center"> Your body already knows your favourite song, let it pick for you! </div>
 
 <br>
 <br>
