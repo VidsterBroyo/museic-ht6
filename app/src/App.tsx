@@ -16,6 +16,7 @@ type View =
   | { name: "biometrics" };
 
 export default function App() {
+  const museic = window.museic;
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>({ name: "feed" });
@@ -27,17 +28,25 @@ export default function App() {
   }, [view.name]);
 
   const refreshSession = useCallback(async () => {
-    setSession(await window.museic.getSession());
-  }, []);
+    if (!museic) {
+      setSession(null);
+      return;
+    }
+    setSession(await museic.getSession());
+  }, [museic]);
 
   useEffect(() => {
+    if (!museic) {
+      setReady(true);
+      return;
+    }
     void (async () => {
       await initApi();
       await refreshSession();
       setReady(true);
     })();
-    return window.museic.onAuthChanged(() => void refreshSession());
-  }, [refreshSession]);
+    return museic.onAuthChanged(() => void refreshSession());
+  }, [museic, refreshSession]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -47,6 +56,23 @@ export default function App() {
   }, [menuOpen]);
 
   if (!ready) return <div className="center-page">loading…</div>;
+
+  if (!museic) {
+    return (
+      <>
+        <AmbientSoundField mode="login" />
+        <div className="center-page">
+          <h1 className="logo">
+            <span className="logo-muse">Muse</span>
+            <span className="logo-ic">ic</span>
+          </h1>
+          <p className="muted">Open Museic in the desktop app to sign in and use live capture.</p>
+          <p className="muted small">The browser preview is rendering correctly; Electron provides the secure app bridge.</p>
+          <ErrorToast />
+        </div>
+      </>
+    );
+  }
 
   if (!session) {
     return (
@@ -58,7 +84,7 @@ export default function App() {
             <span className="logo-ic">ic</span>
           </h1>
           <p className="muted">Music your body actually likes.</p>
-          <button className="primary" onClick={() => void window.museic.login()}>
+          <button className="primary" onClick={() => void museic.login()}>
             Log in with Auth0
           </button>
           <p className="muted small">
@@ -135,7 +161,7 @@ export default function App() {
             </button>
             {menuOpen && (
               <div className="user-dropdown">
-                <button onClick={() => void window.museic.logout()}>Log out</button>
+                <button onClick={() => void museic.logout()}>Log out</button>
               </div>
             )}
           </div>
