@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, audioUrl } from "../api";
-import { setEnjoymentMood } from "../enjoyment";
 import { annotatePoint } from "./signals";
 import type { GraphPoint, SensorReading, Song, SongGraphResponse } from "../types";
 import { StyleInjector } from "./StyleInjector";
@@ -39,12 +38,13 @@ function graphSong(song: Song): SongGraphResponse["song"] {
 export default function Feed({ userId, active = true }: { userId: string; active?: boolean }) {
   const [songs, setSongs] = useState<Song[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentSongIndex, setCurrentSongIndex] = useState(0);
   const [current, setCurrent] = useState<string | null>(null);
   const [captureMode, setCaptureMode] = useState<"presage" | "simulated" | null>(null);
   const [lastReading, setLastReading] = useState<SensorReading | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [graphData, setGraphData] = useState<SongGraphResponse | null>(null);
-  const [visibleSongId, setVisibleSongId] = useState<string | null>(null);
+  const [likedSongs, setLikedSongs] = useState<Set<string>>(new Set());
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bufferRef = useRef<BufferedReading[]>([]);
@@ -56,9 +56,6 @@ export default function Feed({ userId, active = true }: { userId: string; active
   useEffect(() => {
     api<Song[]>("/songs").then((s) => {
       setSongs(s);
-      if (s.length > 0) {
-        setVisibleSongId(s[0].song_id); // Set initial song
-      }
     }).catch((e) => setError(String(e)));
   }, []);
 
@@ -141,59 +138,33 @@ export default function Feed({ userId, active = true }: { userId: string; active
       void flush(currentRef.current);
       void window.museic.stopCapture();
       void window.museic.setNowPlaying(null);
-      setEnjoymentMood(null);
     };
   }, [flush]);
 
-  // Observe which song is in the viewport to show its graph.
-  useEffect(() => {
-    if (!songs) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const intersectingEntry = entries.find((e) => e.isIntersecting);
-        if (intersectingEntry) {
-          const songId = (intersectingEntry.target as HTMLElement).dataset.songId;
-          if (songId) {
-            setVisibleSongId(songId);
-          }
-        }
-      },
-      { root: document.querySelector(".feed"), threshold: 0.75 },
-    );
-
-    const feedEl = document.querySelector(".feed");
-    if (feedEl) {
-      Array.from(feedEl.children).forEach((card) => observer.observe(card));
-    }
-    return () => observer.disconnect();
-  }, [songs]);
+  const currentSong = songs?.[currentSongIndex];
 
   // Load graph data for the visible song.
   useEffect(() => {
-    if (!visibleSongId || graphData?.song.song_id === visibleSongId) return;
+    if (!currentSong || graphData?.song.song_id === currentSong.song_id) return;
 
-    const song = songs?.find((s) => s.song_id === visibleSongId);
-    if (!song) return;
-
-    setGraphData({ song: graphSong(song), points: [] }); // Show empty graph immediately.
-    api<SongGraphResponse>(`/song-graph/${userId}/${visibleSongId}`)
+    setGraphData({ song: graphSong(currentSong), points: [] }); // Show empty graph immediately.
+    api<SongGraphResponse>(`/song-graph/${userId}/${currentSong.song_id}`)
       .then((data) => setGraphData(data))
-      .catch(() => console.log(`No prior graph data for ${visibleSongId}`));
+      .catch(() => console.log(`No prior graph data for ${currentSong.song_id}`));
 
-  }, [visibleSongId, userId, songs, graphData]);
+  }, [currentSong, userId, graphData]);
 
   const stopCurrent = useCallback(async () => {
     await flush(currentRef.current);
     currentRef.current = null;
     setCurrent(null);
     await window.museic.setNowPlaying(null);
-    setEnjoymentMood(null);
   }, [flush]);
 
   const play = useCallback(
-    async (song: Song) => {
-      if (currentRef.current === song.song_id) {
+    async () => {
+      if (!currentSong) return;
+      if (currentRef.current === currentSong.song_id) {
         // If it's the current song, toggle play/pause instead of stopping.
         if (audioRef.current?.paused) {
           await audioRef.current?.play();
@@ -203,28 +174,57 @@ export default function Feed({ userId, active = true }: { userId: string; active
         return;
       }
       await flush(currentRef.current);
-      setGraphData({ song: graphSong(song), points: [] }); // Show graph box immediately
+      setGraphData({ song: graphSong(currentSong), points: [] }); // Show graph box immediately
 
       const audio = audioRef.current;
       if (!audio) return;
       try {
-        audio.src = await audioUrl(song.song_id);
+        audio.src = await audioUrl(currentSong.song_id);
         await audio.play();
       } catch (e) {
         setError(`audio playback failed: ${String(e)}`);
         return;
       }
-      currentRef.current = song.song_id;
-      setCurrent(song.song_id);
-      await window.museic.setNowPlaying(song.song_id); // Muse service beacon
-      setEnjoymentMood(song.llm_tags?.mood ?? null);   // adapt enjoyment to genre/mood
+      currentRef.current = currentSong.song_id;
+      setCurrent(currentSong.song_id);
+      await window.museic.setNowPlaying(currentSong.song_id); // Muse service beacon
       if (!captureMode) {
         const { mode } = await window.museic.startCapture();
         setCaptureMode(mode);
       }
     },
-    [captureMode, flush, stopCurrent],
+    [captureMode, flush, stopCurrent, currentSong],
   );
+
+  const navigate = useCallback((direction: "next" | "prev") => {
+    if (!songs) return;
+    void stopCurrent();
+    const nextIndex = direction === "next" ? currentSongIndex + 1 : currentSongIndex - 1;
+    if (nextIndex >= 0 && nextIndex < songs.length) {
+      setCurrentSongIndex(nextIndex);
+    }
+  }, [songs, currentSongIndex, stopCurrent]);
+
+  const shuffle = useCallback(() => {
+    if (!songs) return;
+    void stopCurrent();
+    const shuffled = [...songs].sort(() => Math.random() - 0.5);
+    setSongs(shuffled);
+    setCurrentSongIndex(0);
+  }, [songs, stopCurrent]);
+
+  const like = useCallback(async () => {
+    if (!currentSong || likedSongs.has(currentSong.song_id)) return;
+    try {
+      const { likes } = await api<{ likes: number }>(`/songs/${currentSong.song_id}/like`, { method: "POST" });
+      setLikedSongs((prev) => new Set(prev).add(currentSong.song_id));
+      setSongs((prevSongs) =>
+        prevSongs?.map((s) => (s.song_id === currentSong.song_id ? { ...s, likes } : s)) ?? null
+      );
+    } catch (e) {
+      console.error("Failed to like song", e);
+    }
+  }, [currentSong, likedSongs]);
 
   if (error) return <div className="pad error">{error}</div>;
   if (!songs) return <div className="pad muted">loading songs…</div>;
@@ -237,6 +237,7 @@ export default function Feed({ userId, active = true }: { userId: string; active
         </p>
       </div>
     );
+  if (!currentSong) return <div className="pad muted">loading songs…</div>;
 
   return (
     <div className="feed-wrap">
@@ -259,51 +260,52 @@ export default function Feed({ userId, active = true }: { userId: string; active
           {((lastReading.movement_intensity ?? 0) * 100).toFixed(0)}%
         </div>
       )}
-      <div className="feed">
-        {songs.map((song) => {
-          const isActive = current === song.song_id;
-          const isPlaying = isActive && isAudioPlaying;
-          return (
-            <section key={song.song_id} data-song-id={song.song_id} className={`song-card ${isActive ? "active" : ""} ${isPlaying ? "is-playing" : ""}`}>
-              <div className="song-album-art">
-                {song.album_art_b64 ? (
-                  <img src={`data:${song.album_art_mime || "image/jpeg"};base64,${song.album_art_b64}`} alt={`Album art for ${song.title}`} />
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-                  </svg>
-                )}
+      <div className={`song-view ${current === currentSong.song_id ? "active" : ""} ${current === currentSong.song_id && isAudioPlaying ? "is-playing" : ""}`}>
+        <div className="song-album-art">
+          {currentSong.album_art_b64 ? (
+            <img src={`data:${currentSong.album_art_mime || "image/jpeg"};base64,${currentSong.album_art_b64}`} alt={`Album art for ${currentSong.title}`} />
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+            </svg>
+          )}
+        </div>
+        <div className="song-meta">
+          <h2 className="meta-title">{currentSong.artist || "unknown artist"}</h2>
+          <p className="meta-artist">{currentSong.title}</p>
+          <p className="muted small">
+            {currentSong.tempo_bpm ? `${currentSong.tempo_bpm} bpm` : ""} {currentSong.key ? `· ${currentSong.key}` : ""}{" "}
+            {currentSong.duration_s ? `· ${Math.floor(currentSong.duration_s / 60)}:${String(currentSong.duration_s % 60).padStart(2, "0")}` : ""}
+          </p>
+          <div className="meta-feedback">
+            <span className="like-count">♥ {currentSong.likes ?? 0}</span>
+            {currentSong.llm_tags?.mood && (
+              <div className="tags">
+                {currentSong.llm_tags.mood.map((m) => (
+                  <span key={m} className="tag">
+                    {m}
+                  </span>
+                ))}
               </div>
-              <div className="song-meta">
-                <h2 className="song-title">{song.title}</h2>
-                <p className="song-artist">{song.artist || "unknown artist"}</p>
-                <p className="muted small">
-                  {song.tempo_bpm ? `${song.tempo_bpm} bpm` : ""} {song.key ? `· ${song.key}` : ""}{" "}
-                  {song.duration_s ? `· ${Math.floor(song.duration_s / 60)}:${String(song.duration_s % 60).padStart(2, "0")}` : ""}
-                </p>
-                {song.llm_tags?.mood && (
-                  <div className="tags">
-                    {song.llm_tags.mood.map((m) => (
-                      <span key={m} className="tag">
-                        {m}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="song-actions">
-                <button className="play-button" onClick={() => void play(song)}>
-                  {isPlaying ? "❚❚" : "▶"}
-                </button>
-              </div>
-              <div className="chart-box">
-                {graphData?.song.song_id === song.song_id && (
-                  <SongGraph song={graphData.song} points={graphData.points} />
-                )}
-              </div>
-            </section>
-          );
-        })}
+            )}
+          </div>
+        </div>
+
+        <div className="nav-panel">
+          <button onClick={shuffle} title="Shuffle playlist">🔀 Shuffle</button>
+          <button onClick={() => navigate("prev")} disabled={currentSongIndex === 0}>⏮ Prev</button>
+          <button className="play-button" onClick={() => void play()}>
+            {current === currentSong.song_id && isAudioPlaying ? "❚❚" : "▶"}
+          </button>
+          <button onClick={() => navigate("next")} disabled={currentSongIndex === songs.length - 1}>Next ⏭</button>
+          <button onClick={like} disabled={likedSongs.has(currentSong.song_id)} title="Like song">👍 Like</button>
+        </div>
+
+        <div className="chart-box">
+          {graphData?.song.song_id === currentSong.song_id && (
+            <SongGraph song={graphData.song} points={graphData.points} />
+          )}
+        </div>
       </div>
     </div>
   );

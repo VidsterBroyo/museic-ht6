@@ -16,6 +16,7 @@ import numpy as np
 from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pymongo import ReturnDocument
 from pydantic import BaseModel, Field
 
 from . import backboard, config, db, insights, ml_model, recommend, signals, spotify
@@ -54,7 +55,7 @@ def _startup() -> None:
 
 class Reading(BaseModel):
     t: int = Field(ge=0, description="second offset into the song")
-    raw: dict[str, Any] = Field(default_factory=dict) 
+    raw: dict[str, Any] = Field(default_factory=dict)
     movement_intensity: Optional[float] = None
     ts: Optional[datetime] = None
 
@@ -66,7 +67,7 @@ class ReactionBatch(BaseModel):
 
 
 def _session_hr_baseline(user_id: str) -> Optional[float]:
-    """Mean pulse over the user's last hour of readings -- the slow-trend 
+    """Mean pulse over the user's last hour of readings -- the slow-trend
     baseline is continuous across the session, not reset per song (§5)."""
     since = datetime.now(timezone.utc) - timedelta(hours=1)
     rows = db.reactions.find(
@@ -478,7 +479,11 @@ def song_audio(song_id: str, _caller: str = Depends(user_id_header_or_query)) ->
     """Stream the local audio file for feed playback. Accepts `?token=` because
     <audio> elements cannot set an Authorization header."""
     song = db.songs.find_one({"_id": song_id}, {"audio_path": 1})
-    path = Path(song["audio_path"]) if song and song.get("audio_path") else None
+    raw_path = song.get("audio_path") if song else None
+    path = None
+    if raw_path:
+        candidate = Path(raw_path)
+        path = candidate if candidate.is_absolute() else (config.AUDIO_DIR / candidate)
 
     # MongoDB is shared across teammates and may contain absolute paths from a
     # different laptop. If the stored path is stale, resolve local_NNN against

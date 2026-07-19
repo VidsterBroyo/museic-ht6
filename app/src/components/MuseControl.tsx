@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { MuseStatus } from "../types";
-import { useEnjoyment } from "../enjoyment"; // Assuming this is a custom hook you've added
 import { StyleInjector } from "./StyleInjector";
 
 /**
@@ -11,7 +10,6 @@ import { StyleInjector } from "./StyleInjector";
  */
 export default function MuseControl({ autoStart = false }: { autoStart?: boolean }) {
   const [status, setStatus] = useState<MuseStatus>({ state: "stopped" });
-  const enjoyment = useEnjoyment();
   const simulate = false;
 
   useEffect(() => {
@@ -51,7 +49,7 @@ export default function MuseControl({ autoStart = false }: { autoStart?: boolean
       <button className="muse-toggle" onClick={() => void toggle()}>
         {active || busy ? "◼ Muse" : "◎ Connect Muse"}
       </button>
-      {shortLabel(status, enjoyment) && <span className="muse-state small">{shortLabel(status, enjoyment)}</span>}
+      {shortLabel(status, null) && <span className="muse-state small">{shortLabel(status, null)}</span>}
     </span>
   );
 }

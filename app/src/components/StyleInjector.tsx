@@ -123,11 +123,8 @@ input[type="text"] {
 .feed-wrap {
   position: relative;
 }
-.feed {
+.song-view {
   height: 100vh;
-  overflow-y: scroll;
-  scroll-snap-type: y mandatory;
-  scroll-behavior: smooth;
 }
 .live-hud {
   position: fixed;
@@ -143,28 +140,15 @@ input[type="text"] {
   z-index: 10;
   border: 1px solid var(--border-color);
 }
-.song-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 24px;
-  height: 100vh;
-  scroll-snap-align: start;
+.song-view {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  position: relative; /* For the disc hole */
 }
-.song-card .song-meta {
+.song-view .song-meta {
   text-align: center;
-}
-.song-card .song-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
 }
 .song-album-art {
   width: 240px;
@@ -196,16 +180,50 @@ input[type="text"] {
   height: 100%;
   object-fit: cover;
 }
-.song-card .song-title {
+.song-view .meta-title {
   font-size: 1.8rem;
   margin-bottom: 4px;
 }
-.song-card .song-artist {
+.song-view .meta-artist {
   font-size: 1.1rem;
   color: var(--text-muted);
   margin-bottom: 16px;
 }
-.song-card .play-button {
+.meta-feedback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+.like-count {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.nav-panel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(26, 26, 46, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 12px 24px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  margin: 24px 0;
+}
+.nav-panel button {
+  background: transparent;
+  border: none;
+  font-size: 1rem;
+  padding: 8px;
+}
+.nav-panel button:disabled {
+  opacity: 0.3;
+}
+.nav-panel .play-button {
   width: 60px;
   height: 60px;
   border-radius: 50%;
@@ -215,15 +233,15 @@ input[type="text"] {
   border: none;
   box-shadow: 0 8px 22px rgba(63, 102, 52, 0.14);
 }
-.song-card.playing .play-button {
+.song-view.is-playing .play-button {
   background-color: var(--success-green);
   box-shadow: 0 8px 22px rgba(63, 102, 52, 0.14);
 }
-.song-card.active .song-album-art {
+.song-view.active .song-album-art {
   animation: spin 12s linear infinite;
   animation-play-state: paused;
 }
-.song-card.active.is-playing .song-album-art {
+.song-view.active.is-playing .song-album-art {
   animation-play-state: running;
 }
 

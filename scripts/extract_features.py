@@ -227,10 +227,10 @@ def gemini_tags(path: Path, api_key: str, model: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def title_artist_from_name(path: Path) -> tuple[str, str]:
-    """'Artist - Title.mp3' -> (title, artist); otherwise stem as title."""
+    """'Title - Artist.mp3' -> (title, artist); otherwise stem as title."""
     stem = path.stem
     if " - " in stem:
-        artist, title = stem.split(" - ", 1)
+        title, artist = stem.split(" - ", 1)
         return title.strip(), artist.strip()
     return stem.strip(), ""
 
@@ -292,12 +292,13 @@ def main() -> int:
             "_id": song_id,
             "title": title,
             "artist": artist,
-            "audio_path": str(path),
+            "audio_path": str(path.relative_to(audio_dir)),
             "duration_s": numeric["duration_s"],
             "sections": numeric["sections"],
             "features": numeric["features"],
             "album_art_b64": art_data[0] if art_data else None,
             "album_art_mime": art_data[1] if art_data else None,
+            "likes": 0,
             # spotify_uri is resolved at export time via search; pre-fill here
             # only if you already know it.
             "spotify_uri": None,
@@ -317,6 +318,8 @@ def main() -> int:
         if not doc.get("album_art_b64") and existing.get("album_art_b64"):
             doc["album_art_b64"] = existing.get("album_art_b64")
             doc["album_art_mime"] = existing.get("album_art_mime")
+        if existing.get("likes"):
+            doc["likes"] = existing["likes"]
 
         songs.replace_one({"_id": song_id}, doc, upsert=True)
         print(f"    seeded: {numeric['duration_s']}s, "
