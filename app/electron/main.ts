@@ -25,10 +25,11 @@ import * as auth from "./auth";
 import * as presage from "./presage";
 import * as muse from "./muse";
 
-// macOS GPU driver crashes (SIGBUS + "texture unloadable") when compositing the
-// live webcam <video> texture alongside the charts. Software compositing is
-// plenty for this UI and sidesteps the native crash. Must run before app-ready.
-app.disableHardwareAcceleration();
+// GPU acceleration is ON. The earlier SIGBUS ("texture unloadable") was caused by
+// the Presage SDK being torn down (async destroy) while a new one re-acquired the
+// camera; that race is now serialized in presage.ts. Without the GPU, Electron
+// paints ~13 live SVG charts on the CPU, which pins the main thread and freezes the
+// UI. If the crash ever returns, re-add: app.disableHardwareAcceleration();
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 const NOW_PLAYING_FILE = path.join(os.tmpdir(), "museic_now_playing.json");

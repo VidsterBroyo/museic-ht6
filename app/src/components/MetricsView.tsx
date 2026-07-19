@@ -155,7 +155,7 @@ export default function MetricsView() {
   const [parts, setParts] = useState<EnjoyResult | null>(null); // live enjoyment breakdown (debug)
   const [cameraMode, setCameraMode] = useState<"presage" | "simulated" | null>(null);
   const [expression, setExpression] = useState<{ label: string; conf: number } | null>(null);
-  const [autofill, setAutofill] = useState(true);
+  const [autofill, setAutofill] = useState(false);
   const [filling, setFilling] = useState<{ cam: boolean; muse: boolean }>({ cam: false, muse: false });
   const [showPreview, setShowPreview] = useState(false); // opt-in webcam self-view (experimental)
   const [feedError, setFeedError] = useState<string | null>(null);
@@ -178,6 +178,14 @@ export default function MetricsView() {
   const museMoveRef = useRef<number | null>(null); // Muse IMU head motion (preferred)
   cameraOnRef.current = cameraMode !== null;
 
+  // Sensors stream at up to ~30 Hz; committing every reading to React state would
+  // re-render ~13 charts 30x/s (heavy, esp. with HW accel off) and can hang/crash
+  // the renderer. We buffer into refs and flush to state at ~8 Hz instead.
+  const pendingRef = useRef<Sample[]>([]);           // samples awaiting a flush
+  const lastPartsRef = useRef<EnjoyResult | null>(null);
+  const expressionRef = useRef<{ label: string; conf: number } | null>(null);
+  const validationRef = useRef<ValidationStatus | null>(null);
+
   // Muse head-bop is a better "groove" signal than Presage's glutes/knees.
   const bestMovement = () => museMoveRef.current ?? camMoveRef.current;
 
@@ -185,14 +193,30 @@ export default function MetricsView() {
     if (startRef.current === null) startRef.current = Date.now();
     const t = Math.round(((Date.now() - startRef.current) / 1000) * 10) / 10;
     const res = scorerRef.current({ ...enjoyRef.current, mood: getEnjoymentMood() });
-    setParts(res);
-    setSamples((prev) => {
-      const next = [
-        ...prev,
-        { t, hr_bpm: null, hrv_rmssd: null, stress_index: null, movement_intensity: null, ...museLatestRef.current, ...partial, liking: res.liking, enjoyment: res.score },
-      ];
-      return next.length > WINDOW ? next.slice(next.length - WINDOW) : next;
+    lastPartsRef.current = res;
+    pendingRef.current.push({
+      t, hr_bpm: null, hrv_rmssd: null, stress_index: null, movement_intensity: null,
+      ...museLatestRef.current, ...partial, liking: res.liking, enjoyment: res.score,
     });
+  }, []);
+
+  // Flush buffered readings to React state at ~8 Hz. setState with an unchanged
+  // ref is a no-op re-render (React bails via Object.is), so idle signals are free.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (pendingRef.current.length) {
+        const batch = pendingRef.current;
+        pendingRef.current = [];
+        setSamples((prev) => {
+          const next = prev.concat(batch);
+          return next.length > WINDOW ? next.slice(next.length - WINDOW) : next;
+        });
+      }
+      setParts(lastPartsRef.current);
+      setExpression(expressionRef.current);
+      setValidation(validationRef.current);
+    }, 125);
+    return () => clearInterval(id);
   }, []);
 
   // Camera stream (Presage / simulation).
@@ -200,7 +224,7 @@ export default function MetricsView() {
     return window.museic.onSensorReading((reading: SensorReading) => {
       lastCamRef.current = Date.now(); // real data arrived -> no need to invent
       const r = reading.raw;
-      if (r.expression) setExpression({ label: r.expression, conf: r.expression_confidence ?? 0 });
+      if (r.expression) expressionRef.current = { label: r.expression, conf: r.expression_confidence ?? 0 };
       const valence = r.expression
         ? (EXPRESSION_VALENCE[r.expression.toLowerCase()] ?? 0) * (r.expression_confidence ?? 0)
         : enjoyRef.current.valence;
@@ -215,9 +239,9 @@ export default function MetricsView() {
     });
   }, [push]);
 
-  // Presage capture-quality / error status.
+  // Presage capture-quality / error status (buffered; flushed at ~8 Hz).
   useEffect(() => {
-    return window.museic.onValidation((status: ValidationStatus) => setValidation(status));
+    return window.museic.onValidation((status: ValidationStatus) => { validationRef.current = status; });
   }, []);
 
   // Muse stream: live ratio + per-band powers.
@@ -272,7 +296,7 @@ export default function MetricsView() {
       if (cameraOnRef.current && now - lastCamRef.current > GAP_MS) {
         const r = stepCameraSim(camSimRef.current);
         camSimRef.current = r.next;
-        setExpression(r.expression);
+        expressionRef.current = r.expression;
         enjoyRef.current = { ...enjoyRef.current, valence: r.valence, movement: r.movement, hr: r.hr };
         push(r.reading);
         cam = true;
@@ -359,9 +383,11 @@ export default function MetricsView() {
   }, []);
 
   const clear = () => {
+    pendingRef.current = [];
     setSamples([]);
     startRef.current = null;
     museLatestRef.current = { ...EMPTY_MUSE };
+    expressionRef.current = null;
     setExpression(null);
   };
 
@@ -530,7 +556,7 @@ function EnjoymentCard({ samples, value, parts }: { samples: Sample[]; value: nu
         </div>
       )}
       <p className="metric-explain small muted">
-        Live 0–100 components (50 = your baseline). If a component sits at ~50 it isn't moving — that signal is flat, not the maths. Two routes, blended by mood: <b>pleasure</b> (liking + groove + engage) for upbeat, <b>moved</b> (absorb + engage + chills) for sad. EEG/HR are baseline-relative; movement is absolute.
+        Live 0–100 components (50 = your baseline). If a component sits at ~50 it isn't moving — that signal is flat, not the maths. Two routes, blended by mood: <b>pleasure</b> (liking + groove + engage) for upbeat, <b>moved</b> (absorb + engage + groove + chills) for sad. Groove now counts in both. EEG/HR are baseline-relative; movement is absolute.
       </p>
     </div>
   );

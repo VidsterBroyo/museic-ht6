@@ -149,8 +149,9 @@ export function createEnjoymentScorer(): EnjoymentScorer {
     let like = liking;
     if (like != null && like < 0.5) like = 0.5 - (0.5 - like) * (1 - mood);
 
-    const pleasure = wavg([[like, 0.45], [groove, 0.30], [eng, 0.25]]);
-    const moved = wavg([[absorption, 0.55], [eng, 0.30], [chills, 0.15]]);
+    const pleasure = wavg([[like, 0.45], [groove, 0.40], [eng, 0.25]]);
+    // Groove also counts when "moved" — people sway gently to sad music too.
+    const moved = wavg([[absorption, 0.55], [eng, 0.30], [groove, 0.20], [chills, 0.15]]);
 
     const parts = { liking, engagement: eng, absorption, groove, chills, pleasure, moved };
     let e: number;

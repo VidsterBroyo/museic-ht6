@@ -43,31 +43,51 @@ type EmitValidation = (status: ValidationStatus) => void;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let sdkInstance: SmartSpectraSDK | null = null;
+// The Presage SDK's destroy() is async and holds the camera/GPU. If a new SDK is
+// created before the previous one finishes tearing down (e.g. React StrictMode
+// double-mounts the Signals page, or a fast Stop->Start), the two race on the same
+// camera and the native layer crashes (SIGSEGV/SIGBUS). We serialize the lifecycle:
+// track the in-flight destroy and await it before starting again, and guard against
+// re-entrant starts.
+let destroying: Promise<void> | null = null;
+let starting = false;
 
 export function isRunning(): boolean {
   return timer !== null || sdkInstance !== null;
 }
 
-export function startCapture(
+export async function startCapture(
   emit: Emit,
   onValidation?: EmitValidation,
   opts?: { simulate?: boolean },
-): { mode: "presage" | "simulated" } {
-  stopCapture();
-  if (opts?.simulate) {
-    // Explicit request (e.g. the Signals test page) -- skip the real SDK.
-    startSimulation(emit);
-    return { mode: "simulated" };
-  }
-  if (process.env.PRESAGE_API_KEY) {
-    return startRealCapture(emit, onValidation);
-  } else {
+): Promise<{ mode: "presage" | "simulated" }> {
+  // Re-entrancy guard: if a start is already in progress, don't spin up a second
+  // native SDK on the same camera.
+  if (starting) return { mode: sdkInstance ? "presage" : "simulated" };
+  starting = true;
+  try {
+    stopCapture();
+    // Wait for any previous SDK to fully release the camera before re-acquiring it.
+    if (destroying) {
+      await destroying.catch(() => {});
+      destroying = null;
+    }
+    if (opts?.simulate) {
+      // Explicit request (e.g. the Signals test page) -- skip the real SDK.
+      startSimulation(emit);
+      return { mode: "simulated" };
+    }
+    if (process.env.PRESAGE_API_KEY) {
+      return startRealCapture(emit, onValidation);
+    }
     console.warn(
       "PRESAGE_API_KEY not set -- using SIMULATED sensor data (see SETUP.md).",
     );
+    startSimulation(emit);
+    return { mode: "simulated" };
+  } finally {
+    starting = false;
   }
-  startSimulation(emit);
-  return { mode: "simulated" };
 }
 
 export function stopCapture(): void {
@@ -79,7 +99,8 @@ export function stopCapture(): void {
     const sdk = sdkInstance;
     sdkInstance = null;
     sdk.stop();
-    void sdk.destroy().catch((err) => console.error("Presage SDK destroy failed", err));
+    // Keep the destroy promise so the next startCapture can await full teardown.
+    destroying = sdk.destroy().catch((err) => console.error("Presage SDK destroy failed", err));
   }
 }
 
@@ -96,7 +117,6 @@ function startRealCapture(
       breathingMetrics,
       cardioMetrics,
       faceMetrics,
-      micromotionMetrics,
     } = require("@smartspectra/node-sdk") as SmartSpectraModule;
     const { decodeMetrics } = require("@smartspectra/node-sdk/messages") as {
       decodeMetrics: (buf: Uint8Array | ArrayBuffer) => unknown;
@@ -104,11 +124,15 @@ function startRealCapture(
 
     const sdk = new SmartSpectraSDK({
       apiKey: process.env.PRESAGE_API_KEY,
+      // micromotionMetrics is intentionally omitted: it runs OpenCV Lucas-Kanade
+      // optical flow, which aborts (cv::Exception, SIGABRT) when the camera changes
+      // frame size mid-stream (e.g. macOS Continuity Camera handoff). We no longer
+      // use camera movement anyway -- the Muse IMU provides head movement -- so this
+      // both fixes the crash and saves main-thread CPU.
       requestedMetrics: [
         ...breathingMetrics,
         ...cardioMetrics,
         ...faceMetrics,
-        ...micromotionMetrics,
       ],
     });
 

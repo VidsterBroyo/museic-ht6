@@ -258,6 +258,9 @@ code { background: #1d1d27; padding: 1px 6px; border-radius: 4px; font-size: 0.8
 .chip-warn { color: #ffd166; border-color: #4d3a12; }
 .chip-muse { color: #b3aef0; border-color: #3a3466; }
 
+.enjoy-parts { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+.enjoy-part b { color: var(--text); font-weight: 600; margin-left: 2px; }
+
 /* Live webcam preview while the camera is on */
 .camera-feed { position: relative; width: 320px; margin: 0 0 18px; }
 .camera-video {
