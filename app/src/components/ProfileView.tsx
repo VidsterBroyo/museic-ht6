@@ -251,9 +251,37 @@ export default function ProfileView({ userId }: { userId: string }) {
       )}
 
       <p className="muted small profile-userid">
-        user id: <code>{profile.user_id}</code>
+        user id: <code>{profile.user_id}</code>{" "}
+        <CopyIdButton text={profile.user_id} />
       </p>
     </div>
+  );
+}
+
+function CopyIdButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  return (
+    <span className="copy-id-wrap">
+      <button type="button" className="copy-id-btn" onClick={() => void copy()} aria-label="Copy user id">
+        Copy
+      </button>
+      {copied && (
+        <span className="copy-id-tip" role="status">
+          Copied!
+        </span>
+      )}
+    </span>
   );
 }
 

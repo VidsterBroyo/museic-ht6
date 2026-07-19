@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type MutableRefObject } from "react";
 import { extractAlbumGlowColor } from "../albumGlow";
 import { api, audioUrl } from "../api";
-import { setEnjoymentMood, useEnjoyment } from "../enjoyment";
+import {
+  getEnjoymentScore,
+  retainEnjoymentEngine,
+  setEnjoymentMood,
+  useEnjoyment,
+} from "../enjoyment";
 import { annotatePoint } from "./signals";
 import type { GraphPoint, SensorReading, Song, SongGraphResponse } from "../types";
 import { StyleInjector } from "./StyleInjector";
@@ -20,10 +25,9 @@ function bumpButton(el: HTMLButtonElement | null) {
 /**
  * TikTok-style vertical scroll feed (RFC §1/§2).
  *
- * Client-side logic is deliberately DUMB: while a song plays, each 1 Hz sensor
- * reading from the Presage adapter is tagged with the current song second and
- * buffered; buffers are POSTed to /reactions/batch. No arousal/valence math
- * happens here -- that's backend-only (§5).
+ * While a song plays, each sensor reading is tagged with the song second and
+ * buffered to /reactions/batch. The live graph also stamps the shared
+ * enjoyment score (see enjoyment.ts) onto each second — that's the hero curve.
  */
 
 interface BufferedReading {
@@ -93,7 +97,10 @@ export default function Feed({ userId, active = true }: { userId: string; active
     }
   }, []);
 
-  // Sensor readings -> tag with song second -> buffer.
+  // Keep the shared enjoyment engine warm while Feed is mounted (graph + HUD).
+  useEffect(() => retainEnjoymentEngine(), []);
+
+  // Sensor readings -> tag with song second -> buffer + stamp enjoyment on graph.
   useEffect(() => {
     return window.museic.onSensorReading((reading) => {
       if (!activeRef.current) return;
@@ -115,6 +122,9 @@ export default function Feed({ userId, active = true }: { userId: string; active
         }
 
         const newAnnotation = annotatePoint(reading, prevReading);
+        // Only the live fused scorer — never invent enjoyment from arousal×valence.
+        const enjoy = getEnjoymentScore();
+        if (enjoy == null) return prevData;
         // Feature curves aren't sent to the client, but the pre-fetched
         // /song-graph points already carry per-second energy/brightness/onset.
         const pointIndex = prevData.points.findIndex((p) => p.t === t);
@@ -122,6 +132,7 @@ export default function Feed({ userId, active = true }: { userId: string; active
         const fullPoint: GraphPoint = {
           t,
           ...newAnnotation,
+          enjoyment: enjoy,
           muse: existing?.muse ?? null,
           energy: existing?.energy ?? null,
           brightness: existing?.brightness ?? null,
@@ -171,7 +182,12 @@ export default function Feed({ userId, active = true }: { userId: string; active
     setGraphData({ song: graphSong(currentSong), points: [] }); // Show empty graph immediately.
     api<SongGraphResponse>(`/song-graph/${encodeURIComponent(userId)}/${currentSong.song_id}`)
       .then((data) => {
-        setGraphData(data);
+        // Song energy/onset come from the file; enjoyment only from this session's
+        // live scorer (never backfill from old arousal×valence — that looked fake).
+        setGraphData({
+          ...data,
+          points: data.points.map((p) => ({ ...p, enjoyment: null })),
+        });
       })
       .catch(() => {
         console.log(`No prior graph data for ${currentSong.song_id}`);

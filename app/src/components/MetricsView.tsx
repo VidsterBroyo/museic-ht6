@@ -326,7 +326,7 @@ export default function MetricsView({ active = true }: { active?: boolean }) {
         {/* Topbar already owns Muse connect; autoStart here double-started on open. */}
         <MuseControl />
         <label
-          className="muse-sim small"
+          className="muse-sim"
           title="Opens the webcam a second time for a self-view. Can crash Electron on some Macs — leave off unless you need it."
         >
           <input
@@ -335,7 +335,7 @@ export default function MetricsView({ active = true }: { active?: boolean }) {
             onChange={(e) => setShowPreview(e.target.checked)}
             disabled={!cameraOn}
           />
-          camera preview
+          Camera preview
         </label>
       </div>
 
@@ -343,7 +343,9 @@ export default function MetricsView({ active = true }: { active?: boolean }) {
         <div className="banner warn">Camera data is SIMULATED — plausible fakes for testing.</div>
       )}
       {showValidation && (
-        <div className="banner err">Presage: {validation!.hint || `status ${validation!.code}`}</div>
+        <div className="banner note">
+          {validation!.hint || `Presage status ${validation!.code}`}
+        </div>
       )}
       {showPreview && feedError && (
         <div className="banner warn">Camera preview unavailable: {feedError}</div>
@@ -352,7 +354,7 @@ export default function MetricsView({ active = true }: { active?: boolean }) {
       {showPreview && cameraOn && (
         <div className="camera-feed">
           <video ref={videoRef} muted playsInline className="camera-video" />
-          <span className="camera-feed-tag small">webcam preview</span>
+          <span className="camera-feed-tag">Preview</span>
         </div>
       )}
 

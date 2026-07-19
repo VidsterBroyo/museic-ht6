@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { MuseStatus, SensorReading } from "./types";
 
 /**
@@ -179,36 +179,99 @@ function ratioFromMuse(status: Extract<MuseStatus, { state: "streaming" }>): num
   return a != null && b ? a / b : null;
 }
 
+// ---------------------------------------------------------------------------
+// Shared live engine — one scorer for the HUD, Muse pill, AND the Feed graph.
+// Without a singleton, each useEnjoyment() would keep its own baseline and the
+// graph would disagree with the ● enjoy number.
+// ---------------------------------------------------------------------------
+let liveScore: number | null = null;
+const scoreListeners = new Set<(s: number | null) => void>();
+let engineStarted = false;
+let engineStop: (() => void) | null = null;
+
+const liveInputs: EnjoyInputs = {
+  valence: null, movement: null, ratio: null, hr: null,
+  asymmetry: null, frontalTheta: null, mood: 0.5,
+};
+let liveCamMove: number | null = null;
+let liveMuseMove: number | null = null;
+const liveScorer = createEnjoymentScorer();
+
+function publishScore(next: number | null): void {
+  liveScore = next;
+  scoreListeners.forEach((l) => l(next));
+}
+
+function recomputeLive(): void {
+  liveInputs.movement = liveMuseMove ?? liveCamMove;
+  liveInputs.mood = getEnjoymentMood();
+  publishScore(liveScorer(liveInputs).score);
+}
+
+/** Latest 0..1 enjoyment (null until sensors flow). Safe to call from Feed graph ticks. */
+export function getEnjoymentScore(): number | null {
+  return liveScore;
+}
+
+/** Start the shared listeners once. Refcounted so HUD + Feed can both opt in. */
+let engineRefs = 0;
+export function retainEnjoymentEngine(): () => void {
+  engineRefs += 1;
+  if (!engineStarted) {
+    engineStarted = true;
+    const offSensor = window.museic.onSensorReading((reading: SensorReading) => {
+      const r = reading.raw;
+      const valence = r.expression
+        ? (EXPRESSION_VALENCE[r.expression.toLowerCase()] ?? 0) * (r.expression_confidence ?? 0)
+        : liveInputs.valence;
+      liveCamMove = reading.movement_intensity ?? liveCamMove;
+      liveInputs.valence = valence;
+      liveInputs.hr = r.hr_bpm ?? liveInputs.hr;
+      recomputeLive();
+    });
+    const offMuse = window.museic.onMuseStatus((status: MuseStatus) => {
+      if (status.state !== "streaming") return;
+      if (status.movement !== undefined) liveMuseMove = status.movement;
+      const ratio = ratioFromMuse(status);
+      if (ratio != null) liveInputs.ratio = ratio;
+      if (status.asymmetry != null) liveInputs.asymmetry = status.asymmetry;
+      if (status.frontalTheta != null) liveInputs.frontalTheta = status.frontalTheta;
+      recomputeLive();
+    });
+    moodListeners.add(recomputeLive);
+    engineStop = () => {
+      offSensor();
+      offMuse();
+      moodListeners.delete(recomputeLive);
+      engineStarted = false;
+      engineStop = null;
+    };
+  }
+  return () => {
+    engineRefs = Math.max(0, engineRefs - 1);
+    if (engineRefs === 0) engineStop?.();
+  };
+}
+
 /**
- * Live enjoyment score computed from the global sensor + Muse streams. Any
- * component can call this to get the current 0..1 value (null until data flows).
+ * Live enjoyment score from the shared engine. Any component can hook this.
  */
 export function useEnjoyment(): number | null {
-  const inputs = useRef<EnjoyInputs>({
-    valence: null, movement: null, ratio: null, hr: null,
-    asymmetry: null, frontalTheta: null, mood: getEnjoymentMood(),
-  });
-  const camMove = useRef<number | null>(null);   // Presage lower-body micromotion
-  const museMove = useRef<number | null>(null);   // Muse IMU head motion (preferred)
-  const scorer = useRef<EnjoymentScorer>(createEnjoymentScorer());
-  const [score, setScore] = useState<number | null>(null);
+  const [score, setScore] = useState<number | null>(liveScore);
 
   useEffect(() => {
-    // Muse head-bop beats Presage's glutes/knees micromotion for "groove".
-    const bestMove = () => museMove.current ?? camMove.current;
+    const release = retainEnjoymentEngine();
     let pending: number | null = null;
     let lastFlush = 0;
     // Sensors can fire ~30 Hz; only push UI ~8 Hz (and skip no-op integer changes).
-    const recompute = () => {
-      const next = scorer.current({
-        ...inputs.current, movement: bestMove(), mood: getEnjoymentMood(),
-      }).score;
+    const onScore = (next: number | null) => {
       const now = Date.now();
       const publish = () => {
         lastFlush = Date.now();
         pending = null;
         setScore((prev) => {
-          if (prev == null || next == null) return next;
+          if (prev == null) return next;
+          if (next == null) return next;
           if (Math.round(prev * 100) === Math.round(next * 100)) return prev;
           return next;
         });
@@ -216,33 +279,11 @@ export function useEnjoyment(): number | null {
       if (now - lastFlush >= 125) publish();
       else if (pending == null) pending = window.setTimeout(publish, 125 - (now - lastFlush));
     };
-
-    const offSensor = window.museic.onSensorReading((reading: SensorReading) => {
-      const r = reading.raw;
-      const valence = r.expression
-        ? (EXPRESSION_VALENCE[r.expression.toLowerCase()] ?? 0) * (r.expression_confidence ?? 0)
-        : inputs.current.valence;
-      camMove.current = reading.movement_intensity ?? camMove.current;
-      inputs.current = { ...inputs.current, valence, hr: r.hr_bpm ?? inputs.current.hr };
-      recompute();
-    });
-
-    const offMuse = window.museic.onMuseStatus((status: MuseStatus) => {
-      if (status.state !== "streaming") return;
-      if (status.movement !== undefined) museMove.current = status.movement; // null clears
-      const ratio = ratioFromMuse(status);
-      if (ratio != null) inputs.current = { ...inputs.current, ratio };
-      if (status.asymmetry != null) inputs.current = { ...inputs.current, asymmetry: status.asymmetry };
-      if (status.frontalTheta != null) inputs.current = { ...inputs.current, frontalTheta: status.frontalTheta };
-      recompute();
-    });
-
-    // Re-score when the song (mood) changes, even without a fresh sensor tick.
-    moodListeners.add(recompute);
+    scoreListeners.add(onScore);
+    onScore(liveScore);
     return () => {
-      offSensor();
-      offMuse();
-      moodListeners.delete(recompute);
+      scoreListeners.delete(onScore);
+      release();
       if (pending != null) clearTimeout(pending);
     };
   }, []);
