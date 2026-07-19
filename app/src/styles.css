@@ -321,7 +321,7 @@ code { background: rgba(79, 180, 119, 0.14); padding: 1px 6px; border-radius: 4p
 .enjoy-part b { color: var(--text); font-weight: 600; margin-left: 2px; }
 
 /* Live webcam preview while the camera is on */
-.camera-feed { position: relative; width: 320px; margin: 0 0 18px; }
+.camera-feed { position: relative; width: 320px; margin: 0 auto 18px; }
 .camera-video {
   width: 320px; height: 240px; object-fit: cover; border-radius: 12px;
   border: 1px solid var(--border); background: #000; transform: scaleX(-1); /* mirror */

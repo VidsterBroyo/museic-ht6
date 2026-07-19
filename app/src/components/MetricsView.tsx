@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
 import MuseControl from "./MuseControl";
 import type { MuseStatus, SensorReading, ValidationStatus } from "../types";
-import { EXPRESSION_VALENCE, clip01, createEnjoymentScorer, getEnjoymentMood, type EnjoyInputs, type EnjoymentScorer, type EnjoyResult } from "../enjoyment";
+import { EXPRESSION_VALENCE, createEnjoymentScorer, getEnjoymentMood, type EnjoyInputs, type EnjoymentScorer, type EnjoyResult } from "../enjoyment";
 
 /**
  * Live "Signals" dashboard — a viewing/testing harness that plots every raw
@@ -11,7 +11,10 @@ import { EXPRESSION_VALENCE, clip01, createEnjoymentScorer, getEnjoymentMood, ty
  */
 
 const WINDOW = 240; // samples kept (~4 min at 1 Hz)
-const GAP_MS = 3000; // silence before we start inventing values for a source
+
+// macOS shares one camera across capture sessions; Windows gives exclusive access.
+// The webcam self-view only runs on macOS (see the self-view effect for details).
+const IS_MAC = /Mac/i.test(navigator.userAgent);
 
 interface Sample {
   t: number;
@@ -30,70 +33,6 @@ interface Sample {
   frontal_theta: number | null; // frontal theta: emotional absorption / being moved
   liking: number | null; // baseline-relative FAA (0.5 = neutral); what the score uses
   enjoyment: number | null; // experimental fused score
-}
-
-// ---------------------------------------------------------------------------
-// Dynamic gap-fill simulators (renderer-side). Only used when a real source has
-// gone quiet — see the gap-filler effect. Mirrors the backend's fake generators.
-// ---------------------------------------------------------------------------
-const SIM_EXPRESSIONS = ["neutral", "happy", "surprise", "sad", "fear"];
-
-interface CamSimState {
-  hr: number;
-  excitement: number; // slow latent state the fakes follow
-  expression: string;
-}
-
-function stepCameraSim(s: CamSimState): {
-  reading: Partial<Sample>;
-  expression: { label: string; conf: number };
-  valence: number;
-  movement: number;
-  hr: number;
-  next: CamSimState;
-} {
-  let excitement = s.excitement + (Math.random() - 0.48) * 0.08;
-  if (Math.random() < 0.04) excitement += 0.5; // occasional "drop hit"
-  excitement = clip01(excitement * 0.97);
-  const hr = s.hr + (65 + excitement * 25 - s.hr) * 0.08 + (Math.random() - 0.5) * 1.2;
-  let expression = s.expression;
-  if (Math.random() < 0.06 + excitement * 0.2) {
-    expression =
-      excitement > 0.55
-        ? Math.random() < 0.7 ? "happy" : "surprise"
-        : SIM_EXPRESSIONS[Math.floor(Math.random() * SIM_EXPRESSIONS.length)];
-  }
-  const conf = Math.round((0.5 + Math.random() * 0.5) * 100) / 100;
-  const movement = clip01(0.1 + excitement * 0.6 + (Math.random() - 0.5) * 0.15);
-  return {
-    reading: {
-      hr_bpm: Math.round(hr),
-      hrv_rmssd: Math.round((55 - excitement * 30 + (Math.random() - 0.5) * 6) * 10) / 10,
-      stress_index: Math.round(40 + excitement * 60 + (Math.random() - 0.5) * 8),
-      movement_intensity: movement,
-    },
-    expression: { label: expression, conf },
-    valence: (EXPRESSION_VALENCE[expression] ?? 0) * conf,
-    movement,
-    hr,
-    next: { hr, excitement, expression },
-  };
-}
-
-function stepMuseSim(): Partial<Sample> {
-  const alpha = 0.12 + Math.random() * 0.1;
-  const beta = 0.35 + Math.random() * 0.15;
-  return {
-    delta: 0.08 + Math.random() * 0.06,
-    theta: 0.05 + Math.random() * 0.05,
-    alpha,
-    beta,
-    gamma: 0.2 + Math.random() * 0.15,
-    alpha_beta_ratio: Math.round((alpha / beta) * 100) / 100,
-    muse_movement: clip01(0.1 + Math.random() * 0.3),
-    asymmetry: Math.round((Math.random() - 0.5) * 1.2 * 100) / 100,
-    frontal_theta: Math.round((0.05 + Math.random() * 0.1) * 1000) / 1000,
-  };
 }
 
 const EMPTY_MUSE = {
@@ -155,10 +94,7 @@ export default function MetricsView() {
   const [parts, setParts] = useState<EnjoyResult | null>(null); // live enjoyment breakdown (debug)
   const [cameraMode, setCameraMode] = useState<"presage" | "simulated" | null>(null);
   const [expression, setExpression] = useState<{ label: string; conf: number } | null>(null);
-  const [autofill, setAutofill] = useState(false);
-  const [filling, setFilling] = useState<{ cam: boolean; muse: boolean }>({ cam: false, muse: false });
-  const [showPreview, setShowPreview] = useState(false); // opt-in webcam self-view (experimental)
-  const [feedError, setFeedError] = useState<string | null>(null);
+  const [feedError, setFeedError] = useState<string | null>(null); // macOS webcam self-view errors
   const [validation, setValidation] = useState<ValidationStatus | null>(null);
 
   const startRef = useRef<number | null>(null);
@@ -168,15 +104,8 @@ export default function MetricsView() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Freshness tracking for the dynamic gap-filler.
-  const lastCamRef = useRef(0);       // ms of last REAL camera reading
-  const lastMuseRef = useRef(0);      // ms of last REAL muse data
-  const cameraOnRef = useRef(false);
-  const museStateRef = useRef<MuseStatus["state"]>("stopped");
-  const camSimRef = useRef<CamSimState>({ hr: 70, excitement: 0.2, expression: "neutral" });
   const camMoveRef = useRef<number | null>(null);  // Presage lower-body micromotion
   const museMoveRef = useRef<number | null>(null); // Muse IMU head motion (preferred)
-  cameraOnRef.current = cameraMode !== null;
 
   // Sensors stream at up to ~30 Hz; committing every reading to React state would
   // re-render ~13 charts 30x/s (heavy, esp. with HW accel off) and can hang/crash
@@ -222,7 +151,6 @@ export default function MetricsView() {
   // Camera stream (Presage / simulation).
   useEffect(() => {
     return window.museic.onSensorReading((reading: SensorReading) => {
-      lastCamRef.current = Date.now(); // real data arrived -> no need to invent
       const r = reading.raw;
       if (r.expression) expressionRef.current = { label: r.expression, conf: r.expression_confidence ?? 0 };
       const valence = r.expression
@@ -247,7 +175,6 @@ export default function MetricsView() {
   // Muse stream: live ratio + per-band powers.
   useEffect(() => {
     return window.museic.onMuseStatus((status: MuseStatus) => {
-      museStateRef.current = status.state;
       if (status.state !== "streaming") return;
       const upd: Partial<Sample> = {};
       if (status.lastRatio != null) upd.alpha_beta_ratio = status.lastRatio;
@@ -265,7 +192,6 @@ export default function MetricsView() {
         }
       }
       if (Object.keys(upd).length === 0) return;
-      lastMuseRef.current = Date.now(); // real data arrived
       museLatestRef.current = { ...museLatestRef.current, ...upd };
       // Feed EEG engagement, liking (asymmetry) + head movement into enjoyment.
       const ratio = upd.alpha_beta_ratio ?? (upd.alpha != null && upd.beta ? upd.alpha / upd.beta : null);
@@ -280,51 +206,7 @@ export default function MetricsView() {
     });
   }, [push]);
 
-  // Dynamic gap-filler: when a live source stops producing (face lost, headband
-  // dropped, failed to start) invent plausible values so the graphs keep moving.
-  // Real data always wins — the moment it returns, freshness updates and we stop.
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (!autofill) {
-        setFilling((f) => (f.cam || f.muse ? { cam: false, muse: false } : f));
-        return;
-      }
-      const now = Date.now();
-      let cam = false;
-      let muse = false;
-
-      if (cameraOnRef.current && now - lastCamRef.current > GAP_MS) {
-        const r = stepCameraSim(camSimRef.current);
-        camSimRef.current = r.next;
-        expressionRef.current = r.expression;
-        enjoyRef.current = { ...enjoyRef.current, valence: r.valence, movement: r.movement, hr: r.hr };
-        push(r.reading);
-        cam = true;
-      }
-
-      const ms = museStateRef.current;
-      if ((ms === "streaming" || ms === "error") && now - lastMuseRef.current > GAP_MS) {
-        const upd = stepMuseSim();
-        museLatestRef.current = { ...museLatestRef.current, ...upd };
-        museMoveRef.current = upd.muse_movement ?? museMoveRef.current;
-        enjoyRef.current = {
-          ...enjoyRef.current,
-          ratio: upd.alpha_beta_ratio ?? enjoyRef.current.ratio,
-          asymmetry: upd.asymmetry ?? enjoyRef.current.asymmetry,
-          frontalTheta: upd.frontal_theta ?? enjoyRef.current.frontalTheta,
-          movement: bestMovement(),
-        };
-        push(upd);
-        muse = true;
-      }
-
-      setFilling((prev) => (prev.cam === cam && prev.muse === muse ? prev : { cam, muse }));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [autofill, push]);
-
   const startCamera = useCallback(async () => {
-    lastCamRef.current = Date.now(); // grace period before gap-filling kicks in
     const { mode } = await window.museic.startCapture();
     setCameraMode(mode);
   }, []);
@@ -335,9 +217,9 @@ export default function MetricsView() {
     setValidation(null);
   }, []);
 
-  // Optional webcam self-view. Off by default: it opens the camera a SECOND time
-  // (Presage already holds it) and heavy GPU video compositing has crashed some
-  // Macs — hence opt-in. Only runs while the checkbox is on and the camera is up.
+  // Webcam self-view (macOS only). AVFoundation lets Presage and this getUserMedia
+  // share one camera; on Windows the camera is single-consumer, so opening it a
+  // second time fails and deadlocks Presage teardown — hence the IS_MAC guard.
   const stopFeed = useCallback(() => {
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
     streamRef.current = null;
@@ -346,7 +228,8 @@ export default function MetricsView() {
   }, []);
 
   useEffect(() => {
-    if (!(showPreview && cameraMode !== null)) {
+    if (!IS_MAC) return;
+    if (cameraMode === null) {
       stopFeed();
       return;
     }
@@ -366,7 +249,7 @@ export default function MetricsView() {
       }
     })();
     return () => { cancelled = true; };
-  }, [showPreview, cameraMode, stopFeed]);
+  }, [cameraMode, stopFeed]);
 
   // Auto-start the camera when the Signals view opens (Muse auto-connects via
   // <MuseControl autoStart/>). Runs on mount; the cleanup below stops it.
@@ -381,15 +264,6 @@ export default function MetricsView() {
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
     };
   }, []);
-
-  const clear = () => {
-    pendingRef.current = [];
-    setSamples([]);
-    startRef.current = null;
-    museLatestRef.current = { ...EMPTY_MUSE };
-    expressionRef.current = null;
-    setExpression(null);
-  };
 
   const cameraOn = cameraMode !== null;
   const latest = samples.length ? samples[samples.length - 1] : null;
@@ -412,37 +286,22 @@ export default function MetricsView() {
           {cameraOn ? "■ Stop camera" : "▶ Start camera"}
         </button>
         <MuseControl autoStart />
-        <span className="spacer" />
-        <label className="muse-sim small" title="When the camera or Muse goes quiet, invent plausible values so the graphs keep moving. Real data always takes over when it returns.">
-          <input type="checkbox" checked={autofill} onChange={(e) => setAutofill(e.target.checked)} />
-          fill gaps with simulated data
-        </label>
-        <label className="muse-sim small" title="Experimental: opens the webcam a second time for a self-view. Can be heavy on some Macs.">
-          <input type="checkbox" checked={showPreview} onChange={(e) => setShowPreview(e.target.checked)} />
-          camera preview
-        </label>
-        <button onClick={clear}>Clear</button>
       </div>
 
       {cameraMode === "simulated" && (
         <div className="banner warn">Camera data is SIMULATED — plausible fakes for testing.</div>
       )}
-      {(filling.cam || filling.muse) && (
-        <div className="banner warn">
-          Sensor quiet — filling {filling.cam && filling.muse ? "camera + Muse" : filling.cam ? "camera" : "Muse"} gaps with simulated data.
-        </div>
-      )}
       {showValidation && (
         <div className="banner err">Presage: {validation!.hint || `status ${validation!.code}`}</div>
       )}
-      {feedError && (
+      {IS_MAC && feedError && (
         <div className="banner warn">Camera preview unavailable: {feedError}</div>
       )}
 
-      {showPreview && cameraOn && (
+      {IS_MAC && cameraOn && (
         <div className="camera-feed">
           <video ref={videoRef} muted playsInline className="camera-video" />
-          <span className="camera-feed-tag small">webcam preview (experimental)</span>
+          <span className="camera-feed-tag small">webcam preview</span>
         </div>
       )}
 
