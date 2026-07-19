@@ -91,20 +91,10 @@ export default function App() {
             <span className="logo-muse">Muse</span>
             <span className="logo-ic">ic</span>
           </h1>
-          <p className="muted">Music your body actually likes.</p>
+          <p style={{ fontSize: "1.2rem" }}>Your body already knows your favorite song.</p>
           <button className="primary" onClick={() => void museic.login()}>
-            Log in with Auth0
+            Log In
           </button>
-          <p className="muted small">
-            Opens your system browser (Authorization Code + PKCE), then returns here via
-            museic://callback.
-          </p>
-          <div className="prelogin-muse">
-            <MuseControl />
-            <p className="muted small">
-              No account needed to test your Muse headband — connect for a live signal preview.
-            </p>
-          </div>
           <ErrorToast />
         </div>
       </>
