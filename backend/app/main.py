@@ -395,6 +395,7 @@ def list_songs(_caller: str = Depends(current_user_id)) -> list[dict[str, Any]]:
                 "llm_tags": s.get("llm_tags"),
                 "spotify_uri": s.get("spotify_uri"),
                 "album_art_b64": s.get("album_art_b64"),
+                "album_art_mime": s.get("album_art_mime"),
             }
         )
     return out
