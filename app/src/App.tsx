@@ -121,7 +121,9 @@ export default function App() {
         </div>
       </header>
       <main>
-        {view.name === "feed" && <Feed userId={session.user?.sub ?? ""} />}
+        <div hidden={view.name !== "feed"}>
+          <Feed userId={session.user?.sub ?? ""} active={view.name === "feed"} />
+        </div>
         {view.name === "profile" && <ProfileView userId={session.user?.sub ?? ""} />}
         {view.name === "compare" && <CompareView selfId={session.user?.sub ?? ""} />}
         {view.name === "signals" && <MetricsView />}
