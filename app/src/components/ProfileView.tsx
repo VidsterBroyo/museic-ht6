@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { api } from "../api";
 import type { Insights, Profile, Recommendation } from "../types";
+import LoadingState from "./LoadingState";
 import { StyleInjector } from "./StyleInjector";
 
 const QUADRANT_EMOJI: Record<string, string> = {
@@ -131,7 +132,7 @@ export default function ProfileView({ userId }: { userId: string }) {
   };
 
   if (error) return <div className="pad error">{error}</div>;
-  if (!profile) return <div className="pad muted">building your profile…</div>;
+  if (!profile) return <LoadingState title="Building your profile" variant="profile" />;
 
   const quadrants = Object.entries(profile.quadrant_counts ?? {});
 

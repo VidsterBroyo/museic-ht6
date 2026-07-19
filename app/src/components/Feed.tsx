@@ -9,6 +9,7 @@ import {
 } from "../enjoyment";
 import { annotatePoint } from "./signals";
 import type { GraphPoint, SensorReading, Song, SongGraphResponse } from "../types";
+import LoadingState from "./LoadingState";
 import { StyleInjector } from "./StyleInjector";
 import SongGraph from "./SongGraph";
 
@@ -280,7 +281,7 @@ export default function Feed({ userId, active = true }: { userId: string; active
   } as React.CSSProperties;
 
   if (error) return <div className="pad error">{error}</div>;
-  if (!songs) return <div className="pad muted">loading songs…</div>;
+  if (!songs) return <LoadingState title="Loading songs" variant="feed" />;
   if (songs.length === 0)
     return (
       <div className="pad">
