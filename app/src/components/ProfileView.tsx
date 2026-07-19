@@ -20,10 +20,10 @@ const QUADRANT_EMOJI: Record<string, string> = {
 };
 
 const QUADRANT_COLOR: Record<string, string> = {
-  hype: "#52FFEE",
-  tense: "#2f8f5a",
-  chill: "#4FB477",
-  sad: "#3F6634",
+  hype: "#FF5D8F",
+  tense: "#E8A84A",
+  chill: "#7A9BB8",
+  sad: "#5A6A8A",
 };
 
 export default function ProfileView({ userId }: { userId: string }) {
@@ -39,8 +39,16 @@ export default function ProfileView({ userId }: { userId: string }) {
   const [exportResult, setExportResult] = useState<string | null>(null);
 
   useEffect(() => {
-    api<Profile>(`/profile/${encodeURIComponent(userId)}`)
-      .then(setProfile)
+    const path = `/profile/${encodeURIComponent(userId)}`;
+    api<Profile>(path)
+      .then(async (p) => {
+        // Old cached blurbs have no **bold** markers — force one regen for the short form.
+        if (p.narrative && !p.narrative.includes("**")) {
+          setProfile(await api<Profile>(`${path}?refresh=true`));
+        } else {
+          setProfile(p);
+        }
+      })
       .catch((e) => setError(String(e)));
   }, [userId]);
 
@@ -88,13 +96,12 @@ export default function ProfileView({ userId }: { userId: string }) {
   return (
     <div className="pad">
       <StyleInjector />
-      <h2>Your music enjoyment profile</h2>
-      <p className="muted small">
-        user id: <code>{profile.user_id}</code> · {profile.n_moments} high-arousal moments captured
-      </p>
+      <h1>Your music enjoyment profile</h1>
 
       {profile.narrative ? (
-        <blockquote className="narrative">{profile.narrative}</blockquote>
+        <blockquote className="narrative">
+          <NarrativeText text={profile.narrative} />
+        </blockquote>
       ) : (
         <p className="muted">
           No narrative yet (Backboard.io key missing, or not enough reactions). React to a few
@@ -137,9 +144,25 @@ export default function ProfileView({ userId }: { userId: string }) {
           <ul className="peaks">
             {profile.arousal_peaks.map((p, i) => (
               <li key={i}>
-                <strong>{p.title ?? p.song_id}</strong>
-                {p.artist ? ` — ${p.artist}` : ""} @ {p.t}s{p.section ? ` (${p.section})` : ""} ·{" "}
-                {QUADRANT_EMOJI[p.quadrant] ?? ""} arousal {(p.arousal * 100).toFixed(0)}%
+                {p.album_art_b64 ? (
+                  <img
+                    className="peak-art"
+                    src={`data:${p.album_art_mime || "image/jpeg"};base64,${p.album_art_b64}`}
+                    alt=""
+                  />
+                ) : (
+                  <span className="peak-art peak-art-fallback" aria-hidden />
+                )}
+                <div className="peak-body">
+                  <div className="peak-title">
+                    <strong>{p.title ?? p.song_id}</strong>
+                    {p.artist ? <span className="muted"> — {p.artist}</span> : null}
+                  </div>
+                  <div className="peak-meta muted small">
+                    @{p.t}s{p.section ? ` (${p.section})` : ""} ·{" "}
+                    {QUADRANT_EMOJI[p.quadrant] ?? ""} arousal {(p.arousal * 100).toFixed(0)}%
+                  </div>
+                </div>
               </li>
             ))}
           </ul>
@@ -179,7 +202,27 @@ export default function ProfileView({ userId }: { userId: string }) {
           </ol>
         </>
       )}
+
+      <p className="muted small profile-userid">
+        user id: <code>{profile.user_id}</code>
+      </p>
     </div>
+  );
+}
+
+/** Renders `**bold**` markers from the narrative string as <strong>. */
+function NarrativeText({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={i}>{part.slice(2, -2)}</strong>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
   );
 }
 
@@ -299,8 +342,8 @@ function YouDot(props: unknown) {
   if (cx == null || cy == null) return <g />;
   return (
     <g>
-      <circle cx={cx} cy={cy} r={13} fill="#52FFEE" fillOpacity={0.22} />
-      <circle cx={cx} cy={cy} r={7} fill="#52FFEE" />
+      <circle cx={cx} cy={cy} r={13} fill="#FF5D8F" fillOpacity={0.22} />
+      <circle cx={cx} cy={cy} r={7} fill="#FF5D8F" />
     </g>
   );
 }

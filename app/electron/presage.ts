@@ -40,12 +40,11 @@ let timer: ReturnType<typeof setInterval> | null = null;
 let sdkInstance: SmartSpectraSDK | null = null;
 // The Presage SDK's destroy() is async and holds the camera/GPU. If a new SDK is
 // created before the previous one finishes tearing down (e.g. React StrictMode
-// double-mounts the Signals page, or a fast Stop->Start), the two race on the same
-// camera and the native layer crashes (SIGSEGV/SIGBUS). We serialize the lifecycle:
-// track the in-flight destroy and await it before starting again, and guard against
-// re-entrant starts.
+// double-mounts Biometrics, or a fast Stop->Start), the two race on the same
+// camera and the native layer crashes (SIGSEGV/SIGBUS). We serialize lifecycle
+// via a promise chain and ignore callbacks from destroyed SDK instances.
 let destroying: Promise<void> | null = null;
-let starting = false;
+let startChain: Promise<unknown> = Promise.resolve();
 let lastValidationKey = "";
 let lastValidationAt = 0;
 
@@ -58,19 +57,11 @@ export async function startCapture(
   onStatus: StatusEmit,
   opts?: { simulate?: boolean },
 ): Promise<{ mode: "presage" | "simulated" }> {
-  // Re-entrancy guard: if a start is already in progress, don't spin up a second
-  // native SDK on the same camera.
-  if (starting) return { mode: sdkInstance ? "presage" : "simulated" };
-  starting = true;
-  try {
-    stopCapture();
-    // Wait for any previous SDK to fully release the camera before re-acquiring it.
-    if (destroying) {
-      await destroying.catch(() => {});
-      destroying = null;
-    }
+  // Serialize starts: concurrent callers await the same queue instead of
+  // returning a fake mode while another start is still mid-flight.
+  const run = async (): Promise<{ mode: "presage" | "simulated" }> => {
+    await stopCaptureAsync();
     if (opts?.simulate) {
-      // Explicit request (e.g. the Signals test page) -- skip the real SDK.
       startSimulation(emit);
       return { mode: "simulated" };
     }
@@ -82,12 +73,21 @@ export async function startCapture(
     );
     startSimulation(emit);
     return { mode: "simulated" };
-  } finally {
-    starting = false;
-  }
+  };
+  const p = startChain.then(run, run);
+  startChain = p.then(
+    () => undefined,
+    () => undefined,
+  );
+  return p;
 }
 
 export function stopCapture(): void {
+  void stopCaptureAsync();
+}
+
+/** Awaitable stop — always use this before creating a new native SDK. */
+export async function stopCaptureAsync(): Promise<void> {
   if (timer) {
     clearInterval(timer);
     timer = null;
@@ -95,12 +95,19 @@ export function stopCapture(): void {
   if (sdkInstance) {
     const sdk = sdkInstance;
     sdkInstance = null;
-    sdk.stop();
-    // Keep the destroy promise so the next startCapture can await full teardown.
+    try {
+      sdk.stop();
+    } catch (err) {
+      console.error("Presage SDK stop failed", err);
+    }
     destroying = sdk.destroy().catch((err) => console.error("Presage SDK destroy failed", err));
   }
   lastValidationKey = "";
   lastValidationAt = 0;
+  if (destroying) {
+    await destroying.catch(() => {});
+    destroying = null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +173,11 @@ function startRealCapture(
       ],
     });
 
+    // Ignore events from this instance after stop/destroy swaps sdkInstance away.
+    const alive = () => sdkInstance === sdk;
+
     sdk.on("metrics", (buf) => {
+      if (!alive()) return;
       try {
         const metrics = decodeMetrics(buf);
         emit(readingFromMetrics(metrics));
@@ -175,6 +186,7 @@ function startRealCapture(
       }
     });
     sdk.on("validationStatus", (code, _ts, hint) => {
+      if (!alive()) return;
       const status = { code, hint: hint ?? "" };
       const key = `${status.code}:${status.hint}`;
       const now = Date.now();
@@ -185,11 +197,12 @@ function startRealCapture(
       onStatus(status);
     });
     sdk.on("error", (code, message, retryable) => {
+      if (!alive()) return;
       console.error("Presage SDK error", code, message, "retryable=", retryable);
       onStatus({ code: code || -1, hint: message ? `Presage error: ${message}` : "Presage SDK error" });
       if (!retryable) {
         console.error("Non-retryable Presage error, stopping capture.");
-        stopCapture();
+        void stopCaptureAsync();
       }
     });
 
@@ -199,8 +212,8 @@ function startRealCapture(
       height: Number(process.env.PRESAGE_CAMERA_HEIGHT ?? 480),
       fps: Number(process.env.PRESAGE_CAMERA_FPS ?? 30),
     });
+    sdkInstance = sdk; // before start() so early callbacks pass alive()
     sdk.start();
-    sdkInstance = sdk;
     return { mode: "presage" };
   } catch (err) {
     console.error("Failed to start Presage SDK -- falling back to simulation.", err);

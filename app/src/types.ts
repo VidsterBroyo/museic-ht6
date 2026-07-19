@@ -92,6 +92,8 @@ export interface Profile {
     song_id: string;
     title: string | null;
     artist: string | null;
+    album_art_b64?: string | null;
+    album_art_mime?: string | null;
     t: number;
     section: string | null;
     arousal: number;

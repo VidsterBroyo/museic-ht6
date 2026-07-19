@@ -42,16 +42,15 @@ export default function CompareView({ selfId }: { selfId: string }) {
   return (
     <div className="pad">
       <StyleInjector />
-      <h2>Compare two listeners</h2>
+      <h1>Compare with friends</h1>
       <p className="muted small">
-        You are <code>{selfId}</code>. Paste the other person's user id (their Auth0 sub — shown in
-        their app's top bar / profile view).
+        You are <code>{selfId}</code>. Paste in your friend's user id.
       </p>
       <div className="row">
         <input
           value={otherId}
           onChange={(e) => setOtherId(e.target.value)}
-          placeholder="auth0|other-user-id"
+          placeholder="User ID"
           spellCheck={false}
         />
         <button className="primary" disabled={!otherId.trim() || loading} onClick={() => void run()}>
@@ -76,16 +75,16 @@ export default function CompareView({ selfId }: { selfId: string }) {
               </h3>
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={s.points} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                  <CartesianGrid stroke="rgba(63, 102, 52, 0.32)" strokeDasharray="3 3" />
-                  <XAxis dataKey="t" stroke="rgba(36, 64, 31, 0.84)" />
-                  <YAxis domain={[0, 1]} stroke="rgba(36, 64, 31, 0.84)" />
+                  <CartesianGrid stroke="rgba(143, 143, 157, 0.28)" strokeDasharray="3 3" />
+                  <XAxis dataKey="t" stroke="var(--muted)" />
+                  <YAxis domain={[0, 1]} stroke="var(--muted)" />
                   <Tooltip
-                    contentStyle={{ background: "#ffffff", border: "1px solid rgba(63, 102, 52, 0.42)", color: "#24401f" }}
+                    contentStyle={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)" }}
                     labelFormatter={(t) => `t = ${t}s`}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="arousal_a" stroke="#3F6634" dot={false} strokeWidth={2} name="you" />
-                  <Line type="monotone" dataKey="arousal_b" stroke="#52FFEE" dot={false} strokeWidth={2} name="them" />
+                  <Line type="monotone" dataKey="arousal_a" stroke="#7A9BB8" dot={false} strokeWidth={2} name="you" />
+                  <Line type="monotone" dataKey="arousal_b" stroke="#FF5D8F" dot={false} strokeWidth={2} name="them" />
                 </LineChart>
               </ResponsiveContainer>
             </div>

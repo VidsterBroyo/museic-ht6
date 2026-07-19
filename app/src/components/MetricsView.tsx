@@ -12,10 +12,6 @@ import { EXPRESSION_VALENCE, createEnjoymentScorer, getEnjoymentMood, type Enjoy
 
 const WINDOW = 240; // samples kept (~4 min at 1 Hz)
 
-// macOS shares one camera across capture sessions; Windows gives exclusive access.
-// The webcam self-view only runs on macOS (see the self-view effect for details).
-const IS_MAC = /Mac/i.test(navigator.userAgent);
-
 interface Sample {
   t: number;
   hr_bpm: number | null;
@@ -61,40 +57,53 @@ interface MetricDef {
 }
 
 const METRICS: MetricDef[] = [
-  { key: "hr_bpm", label: "Heart rate", unit: "bpm", source: "camera", color: "#3F6634",
-    domain: [40, 160], format: (v) => `${Math.round(v)}`, explain: "Pulse from facial colour (rPPG)." },
-  { key: "hrv_rmssd", label: "HRV", unit: "ms RMSSD", source: "camera", color: "#4FB477",
-    domain: [0, 120], format: (v) => `${Math.round(v)}`, explain: "Beat-to-beat variability; drops with stress." },
-  { key: "stress_index", label: "Stress", unit: "Baevsky", source: "camera", color: "#2f8f5a",
-    domain: [0, 150], format: (v) => `${Math.round(v)}`, explain: "HRV-based load. ~50 typical, 100+ high." },
-  { key: "alpha_beta_ratio", label: "Alpha / Beta ratio", unit: "ratio", source: "muse", color: "#2f8f5a",
-    domain: [0, 3], format: (v) => v.toFixed(2), explain: "Low = engaged, high = relaxed. Feeds arousal." },
-  { key: "delta", label: "Delta", unit: "1–4 Hz", source: "muse", color: "#12cbbb",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Deep sleep / very drowsy." },
-  { key: "theta", label: "Theta", unit: "4–8 Hz", source: "muse", color: "#4FB477",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Drowsy, meditative, daydreaming." },
-  { key: "alpha", label: "Alpha", unit: "8–12 Hz", source: "muse", color: "#52FFEE",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Relaxed but awake, calm focus." },
-  { key: "beta", label: "Beta", unit: "13–30 Hz", source: "muse", color: "#3F6634",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Alert, engaged, concentrating." },
-  { key: "gamma", label: "Gamma", unit: "30–44 Hz", source: "muse", color: "#2f8f5a",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Fast; perception. Noisy on consumer EEG." },
-  { key: "muse_movement", label: "Head movement", unit: "%", source: "muse", color: "#12cbbb",
-    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`, explain: "Head-bop / nod from the Muse accelerometer + gyroscope." },
-  { key: "liking", label: "Liking (vs your baseline)", unit: "/100", source: "muse", color: "#4FB477",
+  { key: "hr_bpm", label: "Heart rate", unit: "bpm", source: "camera", color: "#FF5D8F",
+    domain: [40, 160], format: (v) => `${Math.round(v)}`,
+    explain: "Higher vs your baseline → more chills (can raise enjoyment)." },
+  { key: "hrv_rmssd", label: "Heart rate variability", unit: "ms", source: "camera", color: "#E8A84A",
+    domain: [0, 120], format: (v) => `${Math.round(v)}`,
+    explain: "Higher = more relaxed; lower = more stressed." },
+  { key: "stress_index", label: "Stress", unit: "Baevsky", source: "camera", color: "#C97B9A",
+    domain: [0, 150], format: (v) => `${Math.round(v)}`,
+    explain: "Higher = more stressed." },
+  { key: "alpha_beta_ratio", label: "Alpha / Beta ratio", unit: "ratio", source: "muse", color: "#7A9BB8",
+    domain: [0, 3], format: (v) => v.toFixed(2),
+    explain: "Lower = more engaged (raises enjoyment); higher = more relaxed." },
+  { key: "delta", label: "Delta", unit: "1–4 Hz", source: "muse", color: "#5A6A8A",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
+    explain: "Higher = drowsier." },
+  { key: "theta", label: "Theta", unit: "4–8 Hz", source: "muse", color: "#E89B5C",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
+    explain: "Higher = more meditative / daydreamy." },
+  { key: "alpha", label: "Alpha", unit: "8–12 Hz", source: "muse", color: "#FF5D8F",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
+    explain: "Higher = more calm and relaxed." },
+  { key: "beta", label: "Beta", unit: "13–30 Hz", source: "muse", color: "#FF8A9A",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
+    explain: "Higher = more alert and focused." },
+  { key: "gamma", label: "Gamma", unit: "30–44 Hz", source: "muse", color: "#6B8CAE",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
+    explain: "Higher = more fast brain activity (noisy on Muse)." },
+  { key: "muse_movement", label: "Head movement", unit: "%", source: "muse", color: "#E8A84A",
+    domain: [0, 1], format: (v) => `${Math.round(v * 100)}%`,
+    explain: "Higher = more groove → more enjoyment." },
+  { key: "liking", label: "Liking (vs your baseline)", unit: "/100", source: "muse", color: "#FF8A9A",
     domain: [0, 1], format: (v) => `${Math.round(v * 100)}`,
-    explain: "Frontal alpha asymmetry, scored against YOUR baseline. 50 = neutral, >50 = approach/liking, <50 = withdrawal. (Raw FAA is anatomy/contact-biased, so absolute sign is meaningless.)" },
-  { key: "frontal_theta", label: "Absorption (frontal theta)", unit: "%", source: "muse", color: "#52FFEE",
+    explain: "Higher = approach / liking; lower = withdrawal. 50 = your typical." },
+  { key: "frontal_theta", label: "Absorption (frontal theta)", unit: "%", source: "muse", color: "#FF5D8F",
     domain: ["auto", "auto"], format: (v) => `${Math.round(v * 100)}%`,
-    explain: "Frontal theta (AF7/AF8). Rises with deep emotional absorption / being moved — how sad music is enjoyed." },
+    explain: "Higher = more moved / absorbed → more enjoyment (esp. sad songs)." },
 ];
 
-export default function MetricsView() {
+export default function MetricsView({ active = true }: { active?: boolean }) {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [parts, setParts] = useState<EnjoyResult | null>(null); // live enjoyment breakdown (debug)
   const [cameraMode, setCameraMode] = useState<"presage" | "simulated" | null>(null);
   const [expression, setExpression] = useState<{ label: string; conf: number } | null>(null);
-  const [feedError, setFeedError] = useState<string | null>(null); // macOS webcam self-view errors
+  // Opt-in only. Auto-opening getUserMedia while Presage holds the camera has
+  // crashed Electron on macOS (SIGBUS / "texture unloadable") — keep default OFF.
+  const [showPreview, setShowPreview] = useState(false);
+  const [feedError, setFeedError] = useState<string | null>(null);
   const [validation, setValidation] = useState<ValidationStatus | null>(null);
 
   const startRef = useRef<number | null>(null);
@@ -103,6 +112,11 @@ export default function MetricsView() {
   const scorerRef = useRef<EnjoymentScorer>(createEnjoymentScorer());
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // Tracks whether *this* view holds a capture:retain (stop without start would
+  // release Feed's camera). Kept in a ref so inactive-tab cleanup is race-safe.
+  const holdingCaptureRef = useRef(false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const camMoveRef = useRef<number | null>(null);  // Presage lower-body micromotion
   const museMoveRef = useRef<number | null>(null); // Muse IMU head motion (preferred)
@@ -119,6 +133,7 @@ export default function MetricsView() {
   const bestMovement = () => museMoveRef.current ?? camMoveRef.current;
 
   const push = useCallback((partial: Partial<Sample>) => {
+    if (!activeRef.current) return;
     if (startRef.current === null) startRef.current = Date.now();
     const t = Math.round(((Date.now() - startRef.current) / 1000) * 10) / 10;
     const res = scorerRef.current({ ...enjoyRef.current, mood: getEnjoymentMood() });
@@ -129,10 +144,14 @@ export default function MetricsView() {
     });
   }, []);
 
-  // Flush buffered readings to React state at ~8 Hz. setState with an unchanged
-  // ref is a no-op re-render (React bails via Object.is), so idle signals are free.
+  // Flush buffered readings to React state at ~8 Hz. Paused while the tab is
+  // hidden so ~13 charts don't keep reconciling in the background.
   useEffect(() => {
     const id = setInterval(() => {
+      if (!activeRef.current) {
+        pendingRef.current = [];
+        return;
+      }
       if (pendingRef.current.length) {
         const batch = pendingRef.current;
         pendingRef.current = [];
@@ -207,19 +226,33 @@ export default function MetricsView() {
   }, [push]);
 
   const startCamera = useCallback(async () => {
-    const { mode } = await window.museic.startCapture();
-    setCameraMode(mode);
+    if (holdingCaptureRef.current) return;
+    holdingCaptureRef.current = true;
+    try {
+      const { mode } = await window.museic.startCapture();
+      if (!activeRef.current) {
+        // Tab left while start was in flight — drop the retain we just took.
+        holdingCaptureRef.current = false;
+        await window.museic.stopCapture();
+        return;
+      }
+      setCameraMode(mode);
+    } catch {
+      holdingCaptureRef.current = false;
+    }
   }, []);
 
   const stopCamera = useCallback(async () => {
+    if (!holdingCaptureRef.current) return;
+    holdingCaptureRef.current = false;
     await window.museic.stopCapture();
     setCameraMode(null);
     setValidation(null);
   }, []);
 
-  // Webcam self-view (macOS only). AVFoundation lets Presage and this getUserMedia
-  // share one camera; on Windows the camera is single-consumer, so opening it a
-  // second time fails and deadlocks Presage teardown — hence the IS_MAC guard.
+  // Webcam self-view — opt-in via `showPreview`. Opening getUserMedia while the
+  // Presage SDK already owns the camera can SIGBUS Electron's GPU process on
+  // macOS. On Windows the camera is exclusive, so a second open fails / deadlocks.
   const stopFeed = useCallback(() => {
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
     streamRef.current = null;
@@ -228,8 +261,7 @@ export default function MetricsView() {
   }, []);
 
   useEffect(() => {
-    if (!IS_MAC) return;
-    if (cameraMode === null) {
+    if (!(active && showPreview && cameraMode !== null)) {
       stopFeed();
       return;
     }
@@ -249,18 +281,27 @@ export default function MetricsView() {
       }
     })();
     return () => { cancelled = true; };
-  }, [cameraMode, stopFeed]);
+  }, [active, showPreview, cameraMode, stopFeed]);
 
-  // Auto-start the camera when the Signals view opens (Muse auto-connects via
-  // <MuseControl autoStart/>). Runs on mount; the cleanup below stops it.
+  // Start camera only while Biometrics is the visible tab. Defer stop so the
+  // next view can paint before Presage teardown runs on the main process.
   useEffect(() => {
-    void startCamera();
-  }, [startCamera]);
+    if (active) {
+      void startCamera();
+      return;
+    }
+    setShowPreview(false);
+    const t = window.setTimeout(() => void stopCamera(), 0);
+    return () => clearTimeout(t);
+  }, [active, startCamera, stopCamera]);
 
-  // Cleanup on unmount.
+  // Cleanup on real unmount (logout / app teardown).
   useEffect(() => {
     return () => {
-      void window.museic.stopCapture();
+      if (holdingCaptureRef.current) {
+        holdingCaptureRef.current = false;
+        void window.museic.stopCapture();
+      }
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
     };
   }, []);
@@ -275,17 +316,27 @@ export default function MetricsView() {
   return (
     <div className="pad metrics-view">
       <header className="metrics-head">
-        <h2>Signals</h2>
-        <p className="muted small">
-          Live raw sensor streams — camera vitals + the Muse EEG bands. Start a source to watch.
-        </p>
+        <h1>Biometrics</h1>
       </header>
 
       <div className="metrics-controls">
         <button className={cameraOn ? "" : "primary"} onClick={() => void (cameraOn ? stopCamera() : startCamera())}>
           {cameraOn ? "■ Stop camera" : "▶ Start camera"}
         </button>
-        <MuseControl autoStart />
+        {/* Topbar already owns Muse connect; autoStart here double-started on open. */}
+        <MuseControl />
+        <label
+          className="muse-sim small"
+          title="Opens the webcam a second time for a self-view. Can crash Electron on some Macs — leave off unless you need it."
+        >
+          <input
+            type="checkbox"
+            checked={showPreview}
+            onChange={(e) => setShowPreview(e.target.checked)}
+            disabled={!cameraOn}
+          />
+          camera preview
+        </label>
       </div>
 
       {cameraMode === "simulated" && (
@@ -294,11 +345,11 @@ export default function MetricsView() {
       {showValidation && (
         <div className="banner err">Presage: {validation!.hint || `status ${validation!.code}`}</div>
       )}
-      {IS_MAC && feedError && (
+      {showPreview && feedError && (
         <div className="banner warn">Camera preview unavailable: {feedError}</div>
       )}
 
-      {IS_MAC && cameraOn && (
+      {showPreview && cameraOn && (
         <div className="camera-feed">
           <video ref={videoRef} muted playsInline className="camera-video" />
           <span className="camera-feed-tag small">webcam preview</span>
@@ -375,7 +426,7 @@ function EnjoymentCard({ samples, value, parts }: { samples: Sample[]; value: nu
     <div className="metric-card enjoyment-card">
       <div className="metric-card-head">
         <span className="metric-label">
-          Enjoyment <span className="tag-exp">experimental</span>
+          Enjoyment
         </span>
         <span className="metric-value">
           {pct != null ? `${pct}` : "—"}
@@ -388,17 +439,17 @@ function EnjoymentCard({ samples, value, parts }: { samples: Sample[]; value: nu
             <AreaChart data={data} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="grad-enjoyment" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#52FFEE" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="#4FB477" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#FF5D8F" stopOpacity={0.45} />
+                  <stop offset="100%" stopColor="#FF5D8F" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <YAxis domain={[0, 1]} hide />
-              <Area type="monotone" dataKey="v" stroke="#4FB477" strokeWidth={3}
+              <Area type="monotone" dataKey="v" stroke="#FF5D8F" strokeWidth={3}
                 fill="url(#grad-enjoyment)" dot={false} connectNulls isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
-          <div className="metric-empty small muted">start the camera or Muse</div>
+          <div className="metric-empty" />
         )}
       </div>
       {parts && (
@@ -415,7 +466,7 @@ function EnjoymentCard({ samples, value, parts }: { samples: Sample[]; value: nu
         </div>
       )}
       <p className="metric-explain small muted">
-        Live 0–100 components (50 = your baseline). If a component sits at ~50 it isn't moving — that signal is flat, not the maths. Two routes, blended by mood: <b>pleasure</b> (liking + groove + engage) for upbeat, <b>moved</b> (absorb + engage + groove + chills) for sad. Groove now counts in both. EEG/HR are baseline-relative; movement is absolute.
+        Higher = more enjoyment. 50 ≈ your baseline. Blends <b>pleasure</b> (upbeat) and <b>moved</b> (sad).
       </p>
     </div>
   );
@@ -452,9 +503,7 @@ function MetricCard({ def, samples, value }: { def: MetricDef; samples: Sample[]
             </AreaChart>
           </ResponsiveContainer>
         ) : (
-          <div className="metric-empty small muted">
-            {def.source === "muse" ? "connect the Muse" : "start the camera"}
-          </div>
+          <div className="metric-empty" />
         )}
       </div>
       <p className="metric-explain small muted">{def.explain}</p>
@@ -478,10 +527,10 @@ function ExpressionCard({ expression }: { expression: { label: string; conf: num
             <span className="small muted">{Math.round(expression.conf * 100)}% confidence</span>
           </>
         ) : (
-          <div className="metric-empty small muted">start the camera</div>
+          <div className="metric-empty" />
         )}
       </div>
-      <p className="metric-explain small muted">Dominant expression; drives valence.</p>
+      <p className="metric-explain small muted">Happy / surprise can nudge enjoyment up.</p>
     </div>
   );
 }

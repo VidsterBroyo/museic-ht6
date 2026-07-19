@@ -134,7 +134,10 @@ def _top_peaks(user_id: str, n: int = 8) -> list[dict[str, Any]]:
         if key in seen:
             continue
         seen.add(key)
-        song = db.songs.find_one({"_id": r["meta"]["song_id"]}, {"title": 1, "artist": 1, "sections": 1})
+        song = db.songs.find_one(
+            {"_id": r["meta"]["song_id"]},
+            {"title": 1, "artist": 1, "sections": 1, "album_art_b64": 1, "album_art_mime": 1},
+        )
         section = None
         for s in (song or {}).get("sections") or []:
             if s["start_s"] <= r["t"] < s["end_s"]:
@@ -145,6 +148,8 @@ def _top_peaks(user_id: str, n: int = 8) -> list[dict[str, Any]]:
                 "song_id": r["meta"]["song_id"],
                 "title": (song or {}).get("title"),
                 "artist": (song or {}).get("artist"),
+                "album_art_b64": (song or {}).get("album_art_b64"),
+                "album_art_mime": (song or {}).get("album_art_mime"),
                 "t": r["t"],
                 "section": section,
                 "arousal": r["arousal"],
@@ -154,6 +159,26 @@ def _top_peaks(user_id: str, n: int = 8) -> list[dict[str, Any]]:
         )
         if len(peaks) >= n:
             break
+    return peaks
+
+
+def _attach_peak_art(peaks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fill album art on peaks that were cached before art was included."""
+    missing = [p["song_id"] for p in peaks if p.get("song_id") and not p.get("album_art_b64")]
+    if not missing:
+        return peaks
+    arts = {
+        s["_id"]: s
+        for s in db.songs.find(
+            {"_id": {"$in": list(set(missing))}},
+            {"album_art_b64": 1, "album_art_mime": 1},
+        )
+    }
+    for p in peaks:
+        song = arts.get(p.get("song_id"))
+        if song and not p.get("album_art_b64"):
+            p["album_art_b64"] = song.get("album_art_b64")
+            p["album_art_mime"] = song.get("album_art_mime")
     return peaks
 
 
@@ -172,7 +197,7 @@ def _profile_response(
         "mean_arousal": profile.get("mean_arousal"),
         "mean_valence": profile.get("mean_valence"),
         "n_moments": profile.get("n_moments"),
-        "arousal_peaks": peaks,
+        "arousal_peaks": _attach_peak_art(peaks),
         "narrative": narrative,
         "insights": computed_insights,
         "updated_at": profile.get("updated_at"),

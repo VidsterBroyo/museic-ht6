@@ -69,7 +69,7 @@ function shortLabel(s: MuseStatus, enjoyment: number | null): string {
       return s.preview ? `${dot} preview` : `${dot} live`;
     }
     case "error":
-      return "error";
+      return ""; // full message lives in ErrorToast (corner modal)
   }
 }
 

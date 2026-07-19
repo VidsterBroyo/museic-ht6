@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
 import { initApi } from "./api";
 import CompareView from "./components/CompareView";
+import ErrorToast from "./components/ErrorToast";
 import Feed from "./components/Feed";
 import MetricsView from "./components/MetricsView";
 import MuseControl from "./components/MuseControl";
 import ProfileView from "./components/ProfileView";
-import SongGraph from "./components/SongGraph";
 import type { Session } from "./types";
 
 type View =
   | { name: "feed" }
-  | { name: "graph"; songId: string }
   | { name: "profile" }
   | { name: "compare" }
-  | { name: "signals" };
+  | { name: "biometrics" };
 
 export default function App() {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>({ name: "feed" });
   const [menuOpen, setMenuOpen] = useState(false);
+  // Mount Biometrics once, then keep it (unmounting charts freezes the UI).
+  const [biometricsMounted, setBiometricsMounted] = useState(false);
+  useEffect(() => {
+    if (view.name === "biometrics") setBiometricsMounted(true);
+  }, [view.name]);
 
   const refreshSession = useCallback(async () => {
     setSession(await window.museic.getSession());
@@ -46,7 +50,10 @@ export default function App() {
   if (!session) {
     return (
       <div className="center-page">
-        <h1 className="logo">Museic</h1>
+        <h1 className="logo">
+          <span className="logo-muse">Muse</span>
+          <span className="logo-ic">ic</span>
+        </h1>
         <p className="muted">Music your body actually likes.</p>
         <button className="primary" onClick={() => void window.museic.login()}>
           Log in with Auth0
@@ -61,40 +68,47 @@ export default function App() {
             No account needed to test your Muse headband — connect for a live signal preview.
           </p>
         </div>
+        <ErrorToast />
       </div>
     );
   }
 
   return (
     <div className="app">
+      <ErrorToast />
       <header className="topbar">
         <span className="logo" onClick={() => setView({ name: "feed" })}>
-          Museic
+          <span className="logo-muse">Muse</span>
+          <span className="logo-ic">ic</span>
         </span>
         <nav>
           <button
+            data-label="Feed"
             className={view.name === "feed" ? "active" : ""}
             onClick={() => setView({ name: "feed" })}
           >
             Feed
           </button>
           <button
+            data-label="Profile"
             className={view.name === "profile" ? "active" : ""}
             onClick={() => setView({ name: "profile" })}
           >
-            My profile
+            Profile
           </button>
           <button
+            data-label="Compare"
             className={view.name === "compare" ? "active" : ""}
             onClick={() => setView({ name: "compare" })}
           >
             Compare
           </button>
           <button
-            className={view.name === "signals" ? "active" : ""}
-            onClick={() => setView({ name: "signals" })}
+            data-label="Biometrics"
+            className={view.name === "biometrics" ? "active" : ""}
+            onClick={() => setView({ name: "biometrics" })}
           >
-            Signals
+            Biometrics
           </button>
         </nav>
         <div className="user-box">
@@ -123,19 +137,30 @@ export default function App() {
         </div>
       </header>
       <main>
-        {view.name === "feed" && (
-          <Feed onOpenGraph={(songId) => setView({ name: "graph", songId })} />
+        {/* Keep Feed/Profile mounted so data survives tab switches. */}
+        <div
+          className={view.name === "feed" ? "view-keep" : "view-keep view-keep-hidden"}
+          aria-hidden={view.name !== "feed"}
+        >
+          <Feed userId={session.user?.sub ?? ""} active={view.name === "feed"} />
+        </div>
+        <div
+          className={view.name === "profile" ? "view-keep" : "view-keep view-keep-hidden"}
+          aria-hidden={view.name !== "profile"}
+        >
+          <ProfileView userId={session.user?.sub ?? ""} />
+        </div>
+        {/* Keep Biometrics mounted after first visit: tearing down ~13 Recharts
+            + Presage on tab switch freezes the renderer. Pause via `active`. */}
+        {biometricsMounted && (
+          <div
+            className={view.name === "biometrics" ? "view-keep" : "view-keep view-keep-hidden"}
+            aria-hidden={view.name !== "biometrics"}
+          >
+            <MetricsView active={view.name === "biometrics"} />
+          </div>
         )}
-        {view.name === "graph" && (
-          <SongGraph
-            songId={view.songId}
-            userId={session.user?.sub ?? ""}
-            onBack={() => setView({ name: "feed" })}
-          />
-        )}
-        {view.name === "profile" && <ProfileView userId={session.user?.sub ?? ""} />}
         {view.name === "compare" && <CompareView selfId={session.user?.sub ?? ""} />}
-        {view.name === "signals" && <MetricsView />}
       </main>
     </div>
   );

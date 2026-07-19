@@ -14,7 +14,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { BrowserWindow, Menu, app, ipcMain } from "electron";
+import { BrowserWindow, Menu, app, ipcMain, nativeTheme } from "electron";
 import * as dotenv from "dotenv";
 
 // Load repo-root .env (app/ is one level below the repo root in dev).
@@ -36,6 +36,41 @@ const NOW_PLAYING_FILE = path.join(os.tmpdir(), "museic_now_playing.json");
 
 let mainWindow: BrowserWindow | null = null;
 let captureMode: "presage" | "simulated" | null = null;
+// Feed + Biometrics both start/stop the camera. Without a refcount, leaving one
+// page tears Presage down while the other is about to start → native SIGBUS.
+let captureRefs = 0;
+let captureReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+
+function retainCapture(): void {
+  if (captureReleaseTimer) {
+    clearTimeout(captureReleaseTimer);
+    captureReleaseTimer = null;
+  }
+  captureRefs += 1;
+}
+
+function releaseCapture(): void {
+  captureRefs = Math.max(0, captureRefs - 1);
+  if (captureRefs > 0) return;
+  if (captureReleaseTimer) clearTimeout(captureReleaseTimer);
+  // Debounce: StrictMode remount / tab switch often stop→start within ~100ms.
+  captureReleaseTimer = setTimeout(() => {
+    captureReleaseTimer = null;
+    if (captureRefs > 0) return;
+    captureMode = null;
+    void presage.stopCaptureAsync();
+  }, 300);
+}
+
+function forceStopCapture(): void {
+  captureRefs = 0;
+  if (captureReleaseTimer) {
+    clearTimeout(captureReleaseTimer);
+    captureReleaseTimer = null;
+  }
+  captureMode = null;
+  void presage.stopCaptureAsync();
+}
 
 // ---------------------------------------------------------------------------
 // Protocol registration + single instance (Windows callback path)
@@ -78,13 +113,17 @@ async function handleAuthCallback(url: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Window
 // ---------------------------------------------------------------------------
+function windowBackground(): string {
+  return nativeTheme.shouldUseDarkColors ? "#000000" : "#ffffff";
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 800,
     minWidth: 900,
     minHeight: 640,
-    backgroundColor: "#0e0e14",
+    backgroundColor: windowBackground(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -102,6 +141,10 @@ function createWindow(): void {
   });
 }
 
+nativeTheme.on("updated", () => {
+  mainWindow?.setBackgroundColor(windowBackground());
+});
+
 app.whenReady().then(() => {
   // Remove the default File/Edit/View menu bar (Windows/Linux). On macOS the
   // system menu bar is always present, but this drops the app's stock menu.
@@ -117,7 +160,7 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  presage.stopCapture();
+  forceStopCapture();
   muse.stopMuse();
   clearNowPlaying();
   if (process.platform !== "darwin") app.quit();
@@ -167,15 +210,22 @@ ipcMain.handle("auth:get-session", async () => {
 });
 
 ipcMain.handle("capture:start", async (_event, opts?: { simulate?: boolean }) => {
-  if (presage.isRunning() && captureMode) {
+  retainCapture();
+  if (presage.isRunning() && captureMode && !opts?.simulate) {
+    return { mode: captureMode };
+  }
+  // Already running in the requested mode (incl. simulate).
+  if (presage.isRunning() && captureMode === "simulated" && opts?.simulate) {
     return { mode: captureMode };
   }
   const result = await presage.startCapture(
     (reading) => {
-      mainWindow?.webContents.send("sensor:reading", reading);
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send("sensor:reading", reading);
     },
     (status) => {
-      mainWindow?.webContents.send("sensor:validation", status);
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send("sensor:validation", status);
     },
     opts,
   );
@@ -183,8 +233,7 @@ ipcMain.handle("capture:start", async (_event, opts?: { simulate?: boolean }) =>
   return result;
 });
 ipcMain.handle("capture:stop", () => {
-  captureMode = null;
-  presage.stopCapture();
+  releaseCapture();
 });
 
 ipcMain.handle("now-playing:set", (_event, songId: string | null) => setNowPlaying(songId));
@@ -196,7 +245,10 @@ ipcMain.handle("muse:start", async (_event, opts?: { address?: string; simulate?
   const token = (await auth.getAccessToken()) ?? undefined;
   return muse.startMuse(
     { token, address: opts?.address, simulate: opts?.simulate },
-    (s) => mainWindow?.webContents.send("muse:status", s),
+    (s) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send("muse:status", s);
+    },
   );
 });
 ipcMain.handle("muse:stop", () => muse.stopMuse());

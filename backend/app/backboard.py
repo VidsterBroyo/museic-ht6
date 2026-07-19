@@ -24,16 +24,12 @@ _assistant_id: str | None = None
 
 SYSTEM_PROMPT = (
     "You are Museic, a music-taste analyst. You receive biometric listening data: "
-    "arousal/valence peaks timestamped against song structure, emotion-quadrant "
-    "counts, and taste-vector stats. Produce a concise, professional profile "
-    "summary as 3-4 bullet points (each on its own line, prefixed with '- '). "
-    "Each bullet must convey a single key, meaningful insight, specifically "
-    "focused on how this listener's listening trends and enjoyment have changed "
-    "over time. Ground each insight in concrete evidence (song titles, structural "
-    "moments, emotion quadrants) where available. Keep the tone analytical and "
-    "objective; avoid playful or overly personable language. You have persistent "
-    "memory: if you have seen this listener before, acknowledge how their profile "
-    "is evolving."
+    "arousal/valence peaks, emotion-quadrant counts, and taste-vector tags. "
+    "Write ONE short paragraph (2-3 sentences max). Wrap the important facts in "
+    "double asterisks for bold, e.g. **80**, **synthesizer**, **Slayyyter**, **chill**. "
+    "Bold: moment count, top tags/instruments, song titles, section names, and the "
+    "dominant emotion quadrant. Plain surrounding words stay unbolded. "
+    "Ground claims in the data. No bullet lists, no fluff, no user ids."
 )
 
 
@@ -121,17 +117,20 @@ def local_narrative(profile_summary: dict[str, Any]) -> str | None:
     quadrants = profile_summary.get("quadrant_counts") or {}
     top_quadrant = max(quadrants, key=quadrants.get) if quadrants else None
 
-    tag_text = ", ".join(positive_tags) if positive_tags else "the songs that create clear spikes"
-    moment_text = ""
+    tag_text = (
+        ", ".join(f"**{tag}**" for tag in positive_tags)
+        if positive_tags
+        else "clear spikes"
+    )
+    parts = [
+        f"Based on **{n_moments}** high-arousal "
+        f"moment{'' if n_moments == 1 else 's'}. "
+        f"You respond most to {tag_text}."
+    ]
     if peak:
         title = peak.get("title") or peak.get("song_id") or "one track"
-        section = f" during the {peak['section']}" if peak.get("section") else ""
-        moment_text = f" Your strongest recent reaction hit around {title}{section}."
-    quadrant_text = f" Most of your captured moments currently land in the {top_quadrant} zone." if top_quadrant else ""
-
-    return (
-        f"Your listening profile is based on {n_moments} high-arousal moment"
-        f"{'' if n_moments == 1 else 's'}. So far, your body seems to respond most to "
-        f"{tag_text}.{moment_text}{quadrant_text} As you react to more songs, this profile will get "
-        "more specific and the recommendations will lean harder into the patterns that keep showing up."
-    )
+        section = f" ({peak['section']})" if peak.get("section") else ""
+        parts.append(f" Peak: **{title}**{section}.")
+    if top_quadrant:
+        parts.append(f" Mostly **{top_quadrant}**.")
+    return "".join(parts)

@@ -196,8 +196,26 @@ export function useEnjoyment(): number | null {
   useEffect(() => {
     // Muse head-bop beats Presage's glutes/knees micromotion for "groove".
     const bestMove = () => museMove.current ?? camMove.current;
-    const recompute = () =>
-      setScore(scorer.current({ ...inputs.current, movement: bestMove(), mood: getEnjoymentMood() }).score);
+    let pending: number | null = null;
+    let lastFlush = 0;
+    // Sensors can fire ~30 Hz; only push UI ~8 Hz (and skip no-op integer changes).
+    const recompute = () => {
+      const next = scorer.current({
+        ...inputs.current, movement: bestMove(), mood: getEnjoymentMood(),
+      }).score;
+      const now = Date.now();
+      const publish = () => {
+        lastFlush = Date.now();
+        pending = null;
+        setScore((prev) => {
+          if (prev == null) return next;
+          if (Math.round(prev * 100) === Math.round(next * 100)) return prev;
+          return next;
+        });
+      };
+      if (now - lastFlush >= 125) publish();
+      else if (pending == null) pending = window.setTimeout(publish, 125 - (now - lastFlush));
+    };
 
     const offSensor = window.museic.onSensorReading((reading: SensorReading) => {
       const r = reading.raw;
@@ -225,6 +243,7 @@ export function useEnjoyment(): number | null {
       offSensor();
       offMuse();
       moodListeners.delete(recompute);
+      if (pending != null) clearTimeout(pending);
     };
   }, []);
 

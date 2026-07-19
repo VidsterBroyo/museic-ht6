@@ -1,9 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type MutableRefObject } from "react";
+import { extractAlbumGlowColor } from "../albumGlow";
 import { api, audioUrl } from "../api";
+import { setEnjoymentMood, useEnjoyment } from "../enjoyment";
 import { annotatePoint } from "./signals";
 import type { GraphPoint, SensorReading, Song, SongGraphResponse } from "../types";
 import { StyleInjector } from "./StyleInjector";
 import SongGraph from "./SongGraph";
+
+/** Stable wave-bar phase offsets (random-per-render was thrashing the GPU). */
+const WAVE_DELAYS = Array.from({ length: 25 }, (_, i) => -((i * 0.037) % 0.5));
+
+function bumpButton(el: HTMLButtonElement | null) {
+  if (!el) return;
+  el.classList.remove("bump");
+  void el.offsetWidth; // restart CSS animation
+  el.classList.add("bump");
+}
 
 /**
  * TikTok-style vertical scroll feed (RFC §1/§2).
@@ -35,31 +47,15 @@ function graphSong(song: Song): SongGraphResponse["song"] {
   };
 }
 
-function getGlowColor(moods: string[] | undefined): string {
-  if (!moods) return "var(--accent-cyan)";
-  const lowerMoods = moods.map(m => m.toLowerCase());
-
-  if (lowerMoods.some(m => ["sad", "melancholic", "somber", "moody"].includes(m))) {
-    return "var(--accent-blue)";
-  }
-  if (lowerMoods.some(m => ["romantic", "love", "sensual"].includes(m))) {
-    return "var(--accent-red)";
-  }
-  if (lowerMoods.some(m => ["dance", "upbeat", "party", "energetic", "hype"].includes(m))) {
-    return "var(--accent-purple)";
-  }
-  return "var(--accent-cyan)";
-}
-
 export default function Feed({ userId, active = true }: { userId: string; active?: boolean }) {
   const [songs, setSongs] = useState<Song[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
   const [current, setCurrent] = useState<string | null>(null);
   const [captureMode, setCaptureMode] = useState<"presage" | "simulated" | null>(null);
-  const [lastReading, setLastReading] = useState<SensorReading | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [graphData, setGraphData] = useState<SongGraphResponse | null>(null);
+  const [glowColor, setGlowColor] = useState("var(--accent)");
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bufferRef = useRef<BufferedReading[]>([]);
@@ -70,9 +66,17 @@ export default function Feed({ userId, active = true }: { userId: string; active
   activeRef.current = active;
 
   useEffect(() => {
-    api<Song[]>("/songs").then((s) => {
-      setSongs(s);
-    }).catch((e) => setError(String(e)));
+    let cancelled = false;
+    api<Song[]>("/songs")
+      .then((s) => {
+        if (!cancelled) setSongs(Array.isArray(s) ? s : []);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const flush = useCallback(async (songId: string | null) => {
@@ -148,22 +152,13 @@ export default function Feed({ userId, active = true }: { userId: string; active
     return () => clearInterval(id);
   }, [flush]);
 
-  // HUD updates at a fixed rate to prevent flickering.
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (hudReadingRef.current) {
-        setLastReading(hudReadingRef.current);
-      }
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Cleanup on unmount: flush + stop capture + clear now-playing beacon.
+  // Cleanup on unmount. Camera stop is refcounted + debounced in Electron main
+  // so StrictMode / tab switches don't SIGBUS the Presage SDK.
   useEffect(() => {
     return () => {
       void flush(currentRef.current);
-      void window.museic.stopCapture();
       void window.museic.setNowPlaying(null);
+      void window.museic.stopCapture();
     };
   }, [flush]);
 
@@ -171,14 +166,14 @@ export default function Feed({ userId, active = true }: { userId: string; active
 
   // Load graph data for the visible song.
   useEffect(() => {
-    if (!currentSong || graphData?.song.song_id === currentSong.song_id) return;
+    if (!currentSong || !userId || graphData?.song.song_id === currentSong.song_id) return;
 
     setGraphData({ song: graphSong(currentSong), points: [] }); // Show empty graph immediately.
-    api<SongGraphResponse>(`/song-graph/${userId}/${currentSong.song_id}`)
+    api<SongGraphResponse>(`/song-graph/${encodeURIComponent(userId)}/${currentSong.song_id}`)
       .then((data) => {
         setGraphData(data);
       })
-      .catch((e) => {
+      .catch(() => {
         console.log(`No prior graph data for ${currentSong.song_id}`);
       });
   }, [currentSong, userId, graphData?.song.song_id]);
@@ -188,6 +183,7 @@ export default function Feed({ userId, active = true }: { userId: string; active
     await flush(currentRef.current);
     currentRef.current = null;
     setCurrent(null);
+    setEnjoymentMood(null);
     await window.museic.setNowPlaying(null);
   }, [flush]);
 
@@ -217,6 +213,7 @@ export default function Feed({ userId, active = true }: { userId: string; active
       }
       currentRef.current = currentSong.song_id;
       setCurrent(currentSong.song_id);
+      setEnjoymentMood(currentSong.llm_tags?.mood ?? null);
       await window.museic.setNowPlaying(currentSong.song_id); // Muse service beacon
       if (!captureMode) {
         const { mode } = await window.museic.startCapture();
@@ -235,7 +232,29 @@ export default function Feed({ userId, active = true }: { userId: string; active
     }
   }, [songs, currentSongIndex, stopCurrent]);
 
-  const glowColor = currentSong ? getGlowColor(currentSong.llm_tags?.mood) : "var(--accent-cyan)";
+  const onNavClick = (
+    e: MouseEvent<HTMLButtonElement>,
+    action: () => void,
+  ) => {
+    bumpButton(e.currentTarget);
+    action();
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentSong?.album_art_b64) {
+      setGlowColor("var(--accent)");
+      return;
+    }
+    const src = `data:${currentSong.album_art_mime || "image/jpeg"};base64,${currentSong.album_art_b64}`;
+    void extractAlbumGlowColor(src).then((color) => {
+      if (!cancelled) setGlowColor(color ?? "var(--accent)");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSong?.song_id, currentSong?.album_art_b64, currentSong?.album_art_mime]);
+
   const beatDuration = currentSong?.tempo_bpm
     ? `${(60 / currentSong.tempo_bpm).toFixed(2)}s`
     : "0.5s";
@@ -255,7 +274,14 @@ export default function Feed({ userId, active = true }: { userId: string; active
         </p>
       </div>
     );
-  if (!currentSong) return <div className="pad muted">loading songs…</div>;
+  if (!currentSong) {
+    return (
+      <div className="pad muted">
+        Couldn’t show song {currentSongIndex + 1} of {songs.length}.{" "}
+        <button type="button" onClick={() => setCurrentSongIndex(0)}>Go to first</button>
+      </div>
+    );
+  }
 
   return (
     <div className="feed-wrap">
@@ -271,28 +297,24 @@ export default function Feed({ userId, active = true }: { userId: string; active
           Sensor data is SIMULATED — wire the Presage SDK to capture real reactions (SETUP.md).
         </div>
       )}
-      {lastReading && current && (
-        <div className="live-hud">
-          ● live&nbsp; hr {lastReading.raw.hr_bpm ?? "–"} bpm · {lastReading.raw.expression ?? "–"}{" "}
-          ({((lastReading.raw.expression_confidence ?? 0) * 100).toFixed(0)}%) · movement{" "}
-          {((lastReading.movement_intensity ?? 0) * 100).toFixed(0)}%
-        </div>
-      )}
+      {/* Own component so enjoyment ticks don't re-render the chart / album art. */}
+      {current && <FeedLiveHud readingRef={hudReadingRef} />}
       <div
-        className={`song-view ${current === currentSong.song_id ? "active" : ""} ${
+        key={currentSong.song_id}
+        className={`song-view song-enter ${current === currentSong.song_id ? "active" : ""} ${
           current === currentSong.song_id && isAudioPlaying ? "is-playing" : ""
         }`}
         style={viewStyle}
       >
         <div className="song-album-art">
           <div className="sound-waves">
-            {Array.from({ length: 25 }).map((_, i) => (
+            {WAVE_DELAYS.map((delay, i) => (
               <div
                 key={i}
                 className="wave-bar"
                 style={{
                   animationDuration: currentSong.tempo_bpm ? `${(60 / currentSong.tempo_bpm).toFixed(2)}s` : "0.5s",
-                  animationDelay: `${(Math.random() * -0.5).toFixed(2)}s`,
+                  animationDelay: `${delay}s`,
                 }}
               />
             ))}
@@ -326,11 +348,27 @@ export default function Feed({ userId, active = true }: { userId: string; active
         </div>
 
         <div className="nav-panel">
-          <button onClick={() => navigate("prev")} disabled={currentSongIndex === 0}>⏮ Prev</button>
-          <button className="play-button" onClick={() => void play()}>
+          <button
+            type="button"
+            disabled={currentSongIndex === 0}
+            onClick={(e) => onNavClick(e, () => navigate("prev"))}
+          >
+            ⏮
+          </button>
+          <button
+            type="button"
+            className="play-button"
+            onClick={(e) => onNavClick(e, () => void play())}
+          >
             {current === currentSong.song_id && isAudioPlaying ? "❚❚" : "▶"}
           </button>
-          <button onClick={() => navigate("next")} disabled={currentSongIndex === songs.length - 1}>Next ⏭</button>
+          <button
+            type="button"
+            disabled={currentSongIndex === songs.length - 1}
+            onClick={(e) => onNavClick(e, () => navigate("next"))}
+          >
+            ⏭
+          </button>
         </div>
 
         <div className="chart-box">
@@ -339,6 +377,44 @@ export default function Feed({ userId, active = true }: { userId: string; active
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Isolated HUD — keeps high-frequency sensor UI out of the Feed render tree. */
+function FeedLiveHud({
+  readingRef,
+}: {
+  readingRef: MutableRefObject<SensorReading | null>;
+}) {
+  const enjoyment = useEnjoyment();
+  const [reading, setReading] = useState<SensorReading | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (readingRef.current) setReading(readingRef.current);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [readingRef]);
+
+  if (enjoyment == null && !reading) return null;
+
+  return (
+    <div className="live-hud">
+      {enjoyment != null ? (
+        <span className="live-hud-enjoy">
+          ● enjoy <b>{Math.round(enjoyment * 100)}</b>
+        </span>
+      ) : (
+        <span>● live</span>
+      )}
+      {reading && (
+        <span className="live-hud-rest">
+          {" "}· hr {reading.raw.hr_bpm ?? "–"} · {reading.raw.expression ?? "–"}{" "}
+          ({((reading.raw.expression_confidence ?? 0) * 100).toFixed(0)}%) · move{" "}
+          {((reading.movement_intensity ?? 0) * 100).toFixed(0)}%
+        </span>
+      )}
     </div>
   );
 }
