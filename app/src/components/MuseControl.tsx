@@ -10,7 +10,7 @@ import { StyleInjector } from "./StyleInjector";
  */
 export default function MuseControl({ autoStart = false }: { autoStart?: boolean }) {
   const [status, setStatus] = useState<MuseStatus>({ state: "stopped" });
-  const [simulate, setSimulate] = useState(false);
+  const simulate = false;
 
   useEffect(() => {
     void window.museic.getMuseStatus().then(setStatus);
@@ -50,16 +50,6 @@ export default function MuseControl({ autoStart = false }: { autoStart?: boolean
         {active || busy ? "◼ Muse" : "◎ Connect Muse"}
       </button>
       {shortLabel(status, null) && <span className="muse-state small">{shortLabel(status, null)}</span>}
-      {status.state === "stopped" && (
-        <label className="muse-sim small" title="Run without a headband (synthetic band power)">
-          <input
-            type="checkbox"
-            checked={simulate}
-            onChange={(e) => setSimulate(e.target.checked)}
-          />{" "}
-          sim
-        </label>
-      )}
     </span>
   );
 }
