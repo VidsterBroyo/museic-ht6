@@ -6,6 +6,7 @@
   --text: #ececf1;
   --muted: #8f8f9d;
   --accent: #ff5d8f;
+  --font-sans: "Zalando Sans", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -14,7 +15,21 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
+}
+
+body,
+button,
+input,
+textarea,
+select,
+code,
+pre,
+blockquote,
+svg text,
+.recharts-wrapper,
+.recharts-wrapper * {
+  font-family: var(--font-sans);
 }
 
 .app { display: flex; flex-direction: column; height: 100vh; }
