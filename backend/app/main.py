@@ -299,8 +299,6 @@ def song_graph(
     if not song:
         raise HTTPException(status_code=404, detail="unknown song")
     by_t = _user_song_curve(user_id, song_id)
-    if not by_t:
-        raise HTTPException(status_code=404, detail="no reactions for this user+song")
 
     feats = song.get("features") or {}
     energy = feats.get("energy_curve") or []
@@ -311,7 +309,8 @@ def song_graph(
         return curve[t] if t < len(curve) else None
 
     points = []
-    for t in range(0, int(song.get("duration_s") or (max(by_t) + 1))):
+    duration = int(song.get("duration_s") or (max(by_t) + 1 if by_t else 0))
+    for t in range(0, duration):
         p = by_t.get(t)
         points.append(
             {

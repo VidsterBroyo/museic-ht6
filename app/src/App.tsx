@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { initApi } from "./api";
+import logoUrl from "../static/museicLogo.png";
 import AmbientSoundField from "./components/AmbientSoundField";
 import CompareView from "./components/CompareView";
 import ErrorToast from "./components/ErrorToast";
@@ -107,6 +108,7 @@ export default function App() {
       <ErrorToast />
       <header className="topbar">
         <span className="logo" onClick={() => setView({ name: "feed" })}>
+          <img className="logo-img" src={logoUrl} alt="" />
           <span className="logo-muse">Muse</span>
           <span className="logo-ic">ic</span>
         </span>

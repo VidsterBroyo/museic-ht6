@@ -374,12 +374,18 @@ async function completeConnectSpotify(connectCode: string): Promise<boolean> {
       connect_code: connectCode,
       code_verifier: verifier,
       auth_session: authSession,
+      // Required by the My Account API; must match the redirect_uri used in the
+      // original /connect request. Omitting it makes /complete 400 and the
+      // Spotify tokens are never stored in Token Vault.
+      redirect_uri: REDIRECT_URI,
     }),
   });
+  console.log("[connect] complete POST status:", resp.status);
   if (!resp.ok) {
     console.error("connected-accounts/complete failed:", resp.status, await resp.text());
     return false;
   }
+  console.log("[connect] connected account stored \u2713");
   return true;
 }
 

@@ -217,7 +217,11 @@ export default function Feed({ userId, active = true }: { userId: string; active
         return;
       }
       await flush(currentRef.current);
-      setGraphData({ song: graphSong(currentSong), points: [] }); // Show graph box immediately
+      setGraphData((prev) =>
+        prev?.song.song_id === currentSong.song_id
+          ? { ...prev, points: prev.points.map((p) => ({ ...p, enjoyment: null })) }
+          : { song: graphSong(currentSong), points: [] }
+      );
 
       const audio = audioRef.current;
       if (!audio) return;

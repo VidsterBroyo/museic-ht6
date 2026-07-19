@@ -222,6 +222,8 @@ main { flex: 1; min-height: 0; overflow-y: auto; position: relative; }
   cursor: pointer; line-height: 1;
 }
 .center-page .logo { font-size: 4rem; letter-spacing: 0.08em; }
+.topbar .logo { display: inline-flex; align-items: center; }
+.logo-img { height: 34px; width: auto; display: block; margin-right: 10px; }
 
 h1, h2, h3,
 .meta-title,
@@ -436,20 +438,20 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .quadrant-grid { position: relative; width: 100%; aspect-ratio: 1 / 1; }
 
 /* Profile-page subheadings ("Emotion quadrants", "Your music DNA", etc.) */
-.profile-view h3 { font-size: 1.5rem; }
+.profile-view h3 { font-size: 1.5rem; margin-top: calc(1em + 10px); }
 
 .q-axis-label {
   position: absolute; color: var(--text); font-size: 1rem; font-weight: 600;
   white-space: nowrap; pointer-events: none;
 }
-.q-top { top: 2px; left: 50%; transform: translateX(-50%); }
-.q-bottom { bottom: 2px; left: 50%; transform: translateX(-50%); }
+.q-top { top: -4px; left: 50%; transform: translateX(-50%); }
+.q-bottom { bottom: -12px; left: 50%; transform: translateX(-50%); }
 .q-left {
-  left: 2px; top: 50%; writing-mode: vertical-rl;
+  left: -12px; top: 50%; writing-mode: vertical-rl;
   transform: translateY(-50%) rotate(180deg); transform-origin: center;
 }
 .q-right {
-  right: 2px; top: 50%; writing-mode: vertical-rl;
+  right: -12px; top: 50%; writing-mode: vertical-rl;
   transform: translateY(-50%); transform-origin: center;
 }
 
@@ -489,7 +491,7 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
   padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
 }
 .dna-card-title {
-  font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--muted); font-weight: 600;
 }
 .dna-big { font-size: 2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }

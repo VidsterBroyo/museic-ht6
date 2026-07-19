@@ -60,12 +60,12 @@ const METRICS: MetricDef[] = [
   { key: "hr_bpm", label: "Heart rate", unit: "bpm", source: "camera", color: "#FF5D8F",
     domain: [40, 160], format: (v) => `${Math.round(v)}`,
     explain: "Higher vs your baseline → more chills (can raise enjoyment)." },
-  { key: "hrv_rmssd", label: "Heart rate variability", unit: "ms", source: "camera", color: "#E8A84A",
-    domain: [0, 120], format: (v) => `${Math.round(v)}`,
-    explain: "Higher = more relaxed; lower = more stressed." },
-  { key: "stress_index", label: "Stress", unit: "Baevsky", source: "camera", color: "#C97B9A",
-    domain: [0, 150], format: (v) => `${Math.round(v)}`,
-    explain: "Higher = more stressed." },
+  // { key: "hrv_rmssd", label: "Heart rate variability", unit: "ms", source: "camera", color: "#E8A84A",
+  //   domain: [0, 120], format: (v) => `${Math.round(v)}`,
+  //   explain: "Higher = more relaxed; lower = more stressed." },
+  // { key: "stress_index", label: "Stress", unit: "Baevsky", source: "camera", color: "#C97B9A",
+  //   domain: [0, 150], format: (v) => `${Math.round(v)}`,
+  //   explain: "Higher = more stressed." },
   { key: "alpha_beta_ratio", label: "Alpha / Beta ratio", unit: "ratio", source: "muse", color: "#7A9BB8",
     domain: [0, 3], format: (v) => v.toFixed(2),
     explain: "Lower = more engaged (raises enjoyment); higher = more relaxed." },
@@ -518,16 +518,14 @@ function ExpressionCard({ expression }: { expression: { label: string; conf: num
     <div className="metric-card">
       <div className="metric-card-head">
         <span className="metric-label">Expression</span>
-        <span className="metric-value expression-value">{expression ? expression.label : "—"}</span>
+        <span className="metric-value">
+          {expression ? Math.round(expression.conf * 100) : "—"}
+          <span className="metric-unit">% conf</span>
+        </span>
       </div>
       <div className="metric-spark expression-conf">
         {expression ? (
-          <>
-            <div className="bar">
-              <div className="fill" style={{ width: `${Math.round(expression.conf * 100)}%` }} />
-            </div>
-            <span className="small muted">{Math.round(expression.conf * 100)}% confidence</span>
-          </>
+          <span className="expression-value">{expression.label}</span>
         ) : (
           <div className="metric-empty" />
         )}

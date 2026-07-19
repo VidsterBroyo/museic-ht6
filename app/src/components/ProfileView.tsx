@@ -157,6 +157,16 @@ export default function ProfileView({ userId }: { userId: string }) {
 
   const quadrants = Object.entries(profile.quadrant_counts ?? {});
 
+  // Show each song at most once in "Biggest moments", keeping its highest peak.
+  const seenPeakSongs = new Set<string>();
+  const uniquePeaks = [...profile.arousal_peaks]
+    .sort((a, b) => b.arousal - a.arousal)
+    .filter((p) => {
+      if (seenPeakSongs.has(p.song_id)) return false;
+      seenPeakSongs.add(p.song_id);
+      return true;
+    });
+
   return (
     <div className="pad profile-view">
       <StyleInjector />
@@ -202,11 +212,11 @@ export default function ProfileView({ userId }: { userId: string }) {
         </>
       )}
 
-      {profile.arousal_peaks.length > 0 && (
+      {uniquePeaks.length > 0 && (
         <>
           <h3>Biggest moments</h3>
           <ul className="peaks">
-            {profile.arousal_peaks.map((p, i) => (
+            {uniquePeaks.map((p, i) => (
               <li key={i}>
                 {p.album_art_b64 ? (
                   <img
