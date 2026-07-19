@@ -30,6 +30,10 @@ def _feature_array(moment: dict[str, float]) -> list[float]:
     return [float(moment[k]) for k in NUMERIC_KEYS]
 
 
+def _finite(values: list[float]) -> bool:
+    return bool(values) and all(np.isfinite(v) for v in values)
+
+
 def train_user_arousal_model(user_id: str) -> ArousalModel | None:
     """Fit arousal ~= f(song features at the exact listened second)."""
     rows = db.reactions.find(
@@ -50,8 +54,12 @@ def train_user_arousal_model(user_id: str) -> ArousalModel | None:
         moment = song_moment_vector(song, int(r["t"]))
         if not moment:
             continue
-        xs.append(_feature_array(moment))
-        ys.append(float(r["arousal"]))
+        x_row = _feature_array(moment)
+        y = float(r["arousal"])
+        if not _finite(x_row) or not np.isfinite(y):
+            continue
+        xs.append(x_row)
+        ys.append(y)
 
     if len(xs) < MIN_TRAINING_ROWS:
         return None
@@ -66,7 +74,12 @@ def train_user_arousal_model(user_id: str) -> ArousalModel | None:
 
     penalty = np.eye(design.shape[1]) * RIDGE_ALPHA
     penalty[0, 0] = 0.0  # do not penalize intercept
-    weights = np.linalg.solve(design.T @ design + penalty, design.T @ y)
+    lhs = design.T @ design + penalty
+    rhs = design.T @ y
+    try:
+        weights = np.linalg.solve(lhs, rhs)
+    except np.linalg.LinAlgError:
+        weights = np.linalg.lstsq(lhs, rhs, rcond=None)[0]
     return ArousalModel(weights=weights, mean=mean, std=std, n_rows=len(xs))
 
 
@@ -88,9 +101,13 @@ def predict_song_arousal(model: ArousalModel, song: dict[str, Any]) -> float | N
         if not moment:
             continue
         x = np.asarray(_feature_array(moment), dtype=float)
+        if not np.all(np.isfinite(x)):
+            continue
         z = (x - model.mean) / model.std
         row = np.concatenate([[1.0], z])
-        preds.append(float(row @ model.weights))
+        pred = float(row @ model.weights)
+        if np.isfinite(pred):
+            preds.append(pred)
 
     if not preds:
         return None

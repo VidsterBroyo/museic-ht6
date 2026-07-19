@@ -84,7 +84,50 @@ def generate_narrative(user_id: str, profile_summary: dict[str, Any]) -> str | N
                 },
             )
             resp.raise_for_status()
-            return resp.json().get("content")
+            data = resp.json()
+            if data.get("status") == "FAILED":
+                log.warning(
+                    "Backboard narrative generation failed: %s",
+                    data.get("content") or data.get("message") or "unknown failure",
+                )
+                return None
+            content = data.get("content")
+            if not content or content.lower().startswith("llm error:"):
+                log.warning("Backboard returned non-narrative content: %r", content)
+                return None
+            return content
     except Exception:  # noqa: BLE001 - narrative is non-load-bearing
         log.exception("Backboard narrative generation failed")
         return None
+
+
+def local_narrative(profile_summary: dict[str, Any]) -> str | None:
+    """Deterministic fallback when Backboard credits/model routing are unavailable."""
+    n_moments = int(profile_summary.get("n_moments") or 0)
+    if n_moments <= 0:
+        return None
+
+    tags = profile_summary.get("top_tags") or {}
+    positive_tags = [
+        tag for tag, weight in sorted(tags.items(), key=lambda kv: kv[1], reverse=True)
+        if weight > 0
+    ][:4]
+    peaks = profile_summary.get("arousal_peaks") or []
+    peak = peaks[0] if peaks else {}
+    quadrants = profile_summary.get("quadrant_counts") or {}
+    top_quadrant = max(quadrants, key=quadrants.get) if quadrants else None
+
+    tag_text = ", ".join(positive_tags) if positive_tags else "the songs that create clear spikes"
+    moment_text = ""
+    if peak:
+        title = peak.get("title") or peak.get("song_id") or "one track"
+        section = f" during the {peak['section']}" if peak.get("section") else ""
+        moment_text = f" Your strongest recent reaction hit around {title}{section}."
+    quadrant_text = f" Most of your captured moments currently land in the {top_quadrant} zone." if top_quadrant else ""
+
+    return (
+        f"Your listening profile is based on {n_moments} high-arousal moment"
+        f"{'' if n_moments == 1 else 's'}. So far, your body seems to respond most to "
+        f"{tag_text}.{moment_text}{quadrant_text} As you react to more songs, this profile will get "
+        "more specific and the recommendations will lean harder into the patterns that keep showing up."
+    )

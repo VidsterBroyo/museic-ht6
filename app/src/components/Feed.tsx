@@ -22,8 +22,21 @@ interface BufferedReading {
 }
 
 const FLUSH_EVERY_MS = 10_000;
+const MAX_LIVE_POINTS = 300;
 
-export default function Feed({ userId }: { userId: string }) {
+function graphSong(song: Song): SongGraphResponse["song"] {
+  return {
+    song_id: song.song_id,
+    title: song.title,
+    artist: song.artist,
+    duration_s: song.duration_s,
+    tempo_bpm: song.tempo_bpm,
+    key: song.key,
+    sections: [],
+  };
+}
+
+export default function Feed({ userId, active = true }: { userId: string; active?: boolean }) {
   const [songs, setSongs] = useState<Song[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
@@ -37,6 +50,8 @@ export default function Feed({ userId }: { userId: string }) {
   const bufferRef = useRef<BufferedReading[]>([]);
   const currentRef = useRef<string | null>(null);
   const lastReadingRef = useRef<SensorReading | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   useEffect(() => {
     api<Song[]>("/songs").then((s) => {
@@ -64,6 +79,7 @@ export default function Feed({ userId }: { userId: string }) {
   // Sensor readings -> tag with song second -> buffer.
   useEffect(() => {
     return window.museic.onSensorReading((reading) => {
+      if (!activeRef.current) return;
       const prevReading = lastReadingRef.current;
       lastReadingRef.current = reading;
       setLastReading(reading);
@@ -84,7 +100,8 @@ export default function Feed({ userId }: { userId: string }) {
         const newAnnotation = annotatePoint(reading, prevReading);
         // Feature curves aren't sent to the client, but the pre-fetched
         // /song-graph points already carry per-second energy/brightness/onset.
-        const existing = prevData.points.find((p) => p.t === t);
+        const pointIndex = prevData.points.findIndex((p) => p.t === t);
+        const existing = pointIndex >= 0 ? prevData.points[pointIndex] : undefined;
         const fullPoint: GraphPoint = {
           t,
           ...newAnnotation,
@@ -94,7 +111,11 @@ export default function Feed({ userId }: { userId: string }) {
           onset_density: existing?.onset_density ?? null,
         };
 
-        return { ...prevData, points: [...prevData.points, fullPoint] };
+        const nextPoints =
+          pointIndex >= 0
+            ? prevData.points.map((point) => (point.t === t ? fullPoint : point))
+            : [...prevData.points, fullPoint];
+        return { ...prevData, points: nextPoints.slice(-MAX_LIVE_POINTS) };
       });
 
       // Buffering for backend.
@@ -155,7 +176,7 @@ export default function Feed({ userId }: { userId: string }) {
     const song = songs?.find((s) => s.song_id === visibleSongId);
     if (!song) return;
 
-    setGraphData({ song, points: [] }); // Show empty graph immediately.
+    setGraphData({ song: graphSong(song), points: [] }); // Show empty graph immediately.
     api<SongGraphResponse>(`/song-graph/${userId}/${visibleSongId}`)
       .then((data) => setGraphData(data))
       .catch(() => console.log(`No prior graph data for ${visibleSongId}`));
@@ -182,7 +203,7 @@ export default function Feed({ userId }: { userId: string }) {
         return;
       }
       await flush(currentRef.current);
-      setGraphData({ song: { ...song, sections: [] }, points: [] }); // Show graph box immediately
+      setGraphData({ song: graphSong(song), points: [] }); // Show graph box immediately
 
       const audio = audioRef.current;
       if (!audio) return;

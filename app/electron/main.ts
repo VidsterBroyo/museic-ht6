@@ -35,6 +35,7 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 const NOW_PLAYING_FILE = path.join(os.tmpdir(), "museic_now_playing.json");
 
 let mainWindow: BrowserWindow | null = null;
+let captureMode: "presage" | "simulated" | null = null;
 
 // ---------------------------------------------------------------------------
 // Protocol registration + single instance (Windows callback path)
@@ -162,8 +163,11 @@ ipcMain.handle("auth:get-session", async () => {
   return accessToken ? { accessToken, user: auth.getUserClaims() } : null;
 });
 
-ipcMain.handle("capture:start", (_event, opts?: { simulate?: boolean }) => {
-  return presage.startCapture(
+ipcMain.handle("capture:start", async (_event, opts?: { simulate?: boolean }) => {
+  if (presage.isRunning() && captureMode) {
+    return { mode: captureMode };
+  }
+  const result = await presage.startCapture(
     (reading) => {
       mainWindow?.webContents.send("sensor:reading", reading);
     },
@@ -172,8 +176,13 @@ ipcMain.handle("capture:start", (_event, opts?: { simulate?: boolean }) => {
     },
     opts,
   );
+  captureMode = result.mode;
+  return result;
 });
-ipcMain.handle("capture:stop", () => presage.stopCapture());
+ipcMain.handle("capture:stop", () => {
+  captureMode = null;
+  presage.stopCapture();
+});
 
 ipcMain.handle("now-playing:set", (_event, songId: string | null) => setNowPlaying(songId));
 

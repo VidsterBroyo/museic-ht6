@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -23,6 +24,15 @@ from .profiles import rebuild_profile
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("museic.api")
+
+AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
+AUDIO_MEDIA_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+}
 
 app = FastAPI(title="Museic API")
 app.add_middleware(
@@ -214,6 +224,8 @@ def get_profile(
         "arousal_peaks": peaks,
     }
     narrative = backboard.generate_narrative(user_id, summary)
+    if narrative is None:
+        narrative = backboard.local_narrative(summary)
     computed_insights = insights.compute_all(user_id)
     db.profiles.update_one(
         {"user_id": user_id},
@@ -466,15 +478,28 @@ def song_audio(song_id: str, _caller: str = Depends(user_id_header_or_query)) ->
     """Stream the local audio file for feed playback. Accepts `?token=` because
     <audio> elements cannot set an Authorization header."""
     song = db.songs.find_one({"_id": song_id}, {"audio_path": 1})
-    if not song or not song.get("audio_path"):
-        raise HTTPException(status_code=404, detail="unknown song / no audio file")
-    from pathlib import Path
+    path = Path(song["audio_path"]) if song and song.get("audio_path") else None
 
-    path = Path(song["audio_path"])
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail=f"audio file missing: {path}")
-    media = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac", "m4a": "audio/mp4", "ogg": "audio/ogg"}
-    return FileResponse(path, media_type=media.get(path.suffix.lstrip(".").lower(), "application/octet-stream"))
+    # MongoDB is shared across teammates and may contain absolute paths from a
+    # different laptop. If the stored path is stale, resolve local_NNN against
+    # this machine's configured AUDIO_DIR so playback still works locally.
+    if path is None or not path.is_file():
+        try:
+            idx = int(song_id.removeprefix("local_")) - 1
+            local_files = sorted(
+                p for p in config.AUDIO_DIR.iterdir()
+                if p.suffix.lower() in AUDIO_EXTS
+            )
+            path = local_files[idx] if 0 <= idx < len(local_files) else path
+        except (OSError, ValueError):
+            pass
+
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"audio file missing for {song_id}")
+    return FileResponse(
+        path,
+        media_type=AUDIO_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream"),
+    )
 
 
 @app.get("/health")

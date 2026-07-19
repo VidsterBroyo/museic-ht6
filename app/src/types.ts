@@ -52,6 +52,7 @@ export interface Song {
   spotify_uri: string | null;
   sections: { start_s: number; end_s: number; label: string }[];
   album_art_b64: string | null;
+  album_art_mime?: string | null;
 }
 
 export interface GraphPoint {

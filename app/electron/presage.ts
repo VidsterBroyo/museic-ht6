@@ -46,6 +46,8 @@ let sdkInstance: SmartSpectraSDK | null = null;
 // re-entrant starts.
 let destroying: Promise<void> | null = null;
 let starting = false;
+let lastValidationKey = "";
+let lastValidationAt = 0;
 
 export function isRunning(): boolean {
   return timer !== null || sdkInstance !== null;
@@ -97,6 +99,8 @@ export function stopCapture(): void {
     // Keep the destroy promise so the next startCapture can await full teardown.
     destroying = sdk.destroy().catch((err) => console.error("Presage SDK destroy failed", err));
   }
+  lastValidationKey = "";
+  lastValidationAt = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,8 +175,14 @@ function startRealCapture(
       }
     });
     sdk.on("validationStatus", (code, _ts, hint) => {
-      onStatus({ code, hint: hint ?? "" });
+      const status = { code, hint: hint ?? "" };
+      const key = `${status.code}:${status.hint}`;
+      const now = Date.now();
+      if (key === lastValidationKey && now - lastValidationAt < 2000) return;
+      lastValidationKey = key;
+      lastValidationAt = now;
       if (code !== 0) console.warn("Presage validation:", code, hint);
+      onStatus(status);
     });
     sdk.on("error", (code, message, retryable) => {
       console.error("Presage SDK error", code, message, "retryable=", retryable);
