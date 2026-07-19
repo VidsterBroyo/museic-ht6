@@ -227,10 +227,10 @@ def gemini_tags(path: Path, api_key: str, model: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def title_artist_from_name(path: Path) -> tuple[str, str]:
-    """'Artist - Title.mp3' -> (title, artist); otherwise stem as title."""
+    """'Title - Artist.mp3' -> (title, artist); otherwise stem as title."""
     stem = path.stem
     if " - " in stem:
-        artist, title = stem.split(" - ", 1)
+        title, artist = stem.split(" - ", 1)
         return title.strip(), artist.strip()
     return stem.strip(), ""
 
@@ -292,7 +292,7 @@ def main() -> int:
             "_id": song_id,
             "title": title,
             "artist": artist,
-            "audio_path": str(path),
+            "audio_path": str(path.relative_to(audio_dir)),
             "duration_s": numeric["duration_s"],
             "sections": numeric["sections"],
             "features": numeric["features"],

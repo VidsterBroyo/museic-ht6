@@ -468,13 +468,13 @@ def song_audio(song_id: str, _caller: str = Depends(user_id_header_or_query)) ->
     song = db.songs.find_one({"_id": song_id}, {"audio_path": 1})
     if not song or not song.get("audio_path"):
         raise HTTPException(status_code=404, detail="unknown song / no audio file")
-    from pathlib import Path
 
-    path = Path(song["audio_path"])
+    path = config.AUDIO_DIR / song["audio_path"]
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"audio file missing: {path}")
-    media = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac", "m4a": "audio/mp4", "ogg": "audio/ogg"}
-    return FileResponse(path, media_type=media.get(path.suffix.lstrip(".").lower(), "application/octet-stream"))
+    import mimetypes
+    media_type, _ = mimetypes.guess_type(str(path))
+    return FileResponse(path, media_type=media_type or "application/octet-stream")
 
 
 @app.get("/health")
