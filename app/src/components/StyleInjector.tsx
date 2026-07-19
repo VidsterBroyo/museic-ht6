@@ -6,6 +6,11 @@ export function StyleInjector() {
   return (
     <style>
       {`
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 :root {
   --bg-main: #0d0d1a;
   --bg-card: #1a1a2e;
@@ -145,14 +150,21 @@ input[type="text"] {
   gap: 12px;
 }
 .song-album-art {
-  width: 140px;
-  height: 140px;
+  width: 240px;
+  height: 240px;
   background: var(--border-color);
-  border-radius: 8px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.song-album-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .song-card .song-title {
   font-size: 1.8rem;
@@ -176,6 +188,9 @@ input[type="text"] {
 .song-card.playing .play-button {
   background-color: var(--accent-cyan);
   box-shadow: 0 0 20px -5px var(--accent-cyan);
+}
+.song-card.playing .song-album-art {
+  animation: spin 12s linear infinite;
 }
 
 /* ProfileView.tsx */

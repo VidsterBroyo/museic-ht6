@@ -5,7 +5,7 @@ JWT (RS256, validated against the tenant's JWKS); the `sub` claim is used as
 `user_id` everywhere in the data model.
 """
 from functools import lru_cache
-
+from typing import Union, Optional
 import jwt
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -38,7 +38,7 @@ def decode_token(token: str) -> dict:
 
 
 async def current_user_id(
-    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> str:
     """FastAPI dependency: validated Auth0 `sub` claim."""
     if creds is None:
@@ -48,7 +48,7 @@ async def current_user_id(
 
 
 async def raw_access_token(
-    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> str:
     """The raw (validated) Auth0 access token -- needed as the subject token
     for the Token Vault exchange in /playlist/export."""
@@ -60,7 +60,7 @@ async def raw_access_token(
 
 async def user_id_header_or_query(
     request: Request,
-    token: str | None = Query(default=None),
+    token: Optional[str] = Query(default=None),
 ) -> str:
     """Auth for the audio-streaming endpoint only: HTML <audio> elements cannot
     set headers, so a `?token=` query parameter is also accepted there."""

@@ -151,6 +151,20 @@ def heuristic_sections(energy: list[float]) -> list[dict]:
     return sections
 
 
+def extract_album_art(path: Path) -> str | None:
+    """Use TinyTag to pull embedded album art and return it as base64."""
+    try:
+        from tinytag import TinyTag
+
+        tag = TinyTag.get(str(path), image=True)
+        image_bytes = tag.get_image()
+        if image_bytes:
+            return base64.b64encode(image_bytes).decode("ascii")
+    except Exception as e:
+        print(f"    ! could not extract album art: {e}")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Pass 2: Gemini qualitative tags (direct API -- see module docstring)
 # ---------------------------------------------------------------------------
@@ -239,7 +253,7 @@ def main() -> int:
         return 1
 
     gemini_key = os.getenv("GEMINI_API_KEY", "")
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
     if not args.skip_gemini and not gemini_key:
         print("GEMINI_API_KEY not set -- running numeric pass only (use --skip-gemini "
               "to silence this).")
@@ -264,6 +278,7 @@ def main() -> int:
 
         print("    librosa: per-second curves ...")
         numeric = per_second_curves(path)
+        art_b64 = extract_album_art(path)
 
         doc = {
             "_id": song_id,
@@ -273,6 +288,7 @@ def main() -> int:
             "duration_s": numeric["duration_s"],
             "sections": numeric["sections"],
             "features": numeric["features"],
+            "album_art_b64": art_b64,
             # spotify_uri is resolved at export time via search; pre-fill here
             # only if you already know it.
             "spotify_uri": None,
@@ -289,6 +305,8 @@ def main() -> int:
             doc["llm_tags"] = existing["llm_tags"]  # keep old tags on re-runs
         if existing.get("spotify_uri"):
             doc["spotify_uri"] = existing["spotify_uri"]
+        if not doc.get("album_art_b64") and existing.get("album_art_b64"):
+            doc["album_art_b64"] = existing["album_art_b64"]
 
         songs.replace_one({"_id": song_id}, doc, upsert=True)
         print(f"    seeded: {numeric['duration_s']}s, "

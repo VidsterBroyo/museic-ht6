@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 from fastapi import Body, Depends, FastAPI, HTTPException
@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import backboard, config, db, ml_model, recommend, signals, spotify
+from . import backboard, db, ml_model, recommend, signals, spotify
 from .auth import current_user_id, raw_access_token, user_id_header_or_query
 from .profiles import rebuild_profile
 
@@ -44,19 +44,19 @@ def _startup() -> None:
 
 class Reading(BaseModel):
     t: int = Field(ge=0, description="second offset into the song")
-    raw: dict[str, Any] = Field(default_factory=dict)
-    movement_intensity: float | None = None
-    ts: datetime | None = None
+    raw: dict[str, Any] = Field(default_factory=dict) 
+    movement_intensity: Optional[float] = None
+    ts: Optional[datetime] = None
 
 
 class ReactionBatch(BaseModel):
     song_id: str
-    source: str = "presage"  # "presage" | "muse" | "imu"
+    source: str = "presage"  # "presage" or "muse" or "imu"
     readings: list[Reading]
 
 
-def _session_hr_baseline(user_id: str) -> float | None:
-    """Mean pulse over the user's last hour of readings -- the slow-trend
+def _session_hr_baseline(user_id: str) -> Optional[float]:
+    """Mean pulse over the user's last hour of readings -- the slow-trend 
     baseline is continuous across the session, not reset per song (§5)."""
     since = datetime.now(timezone.utc) - timedelta(hours=1)
     rows = db.reactions.find(
@@ -146,72 +146,26 @@ def _top_peaks(user_id: str, n: int = 8) -> list[dict[str, Any]]:
     return peaks
 
 
-def _profile_response(user_id: str, profile: dict[str, Any], peaks: list[dict[str, Any]], narrative: str | None) -> dict[str, Any]:
-    return {
-        "user_id": user_id,
-        "taste_vector": profile.get("vector"),
-        "top_tags": profile.get("tags"),
-        "quadrant_counts": profile.get("quadrant_counts"),
-        "mean_arousal": profile.get("mean_arousal"),
-        "mean_valence": profile.get("mean_valence"),
-        "n_moments": profile.get("n_moments"),
-        "arousal_peaks": peaks,
-        "narrative": narrative,
-        "updated_at": profile.get("updated_at"),
-    }
-
-
-def _profile_is_fresh(stored: dict[str, Any] | None) -> bool:
-    """Fresh = we have a stored doc that was fully served (rebuild + narrative)
-    within the TTL window. Reaction batches only bump `updated_at`, never
-    `refreshed_at`, so active listening doesn't keep the served view 'fresh'."""
-    if not stored or "refreshed_at" not in stored:
-        return False
-    ts = stored["refreshed_at"]
-    if getattr(ts, "tzinfo", None) is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    age = datetime.now(timezone.utc) - ts
-    return age < timedelta(seconds=config.PROFILE_REFRESH_TTL_SECONDS)
-
-
 @app.get("/profile/{user_id}")
-def get_profile(
-    user_id: str,
-    refresh: bool = False,
-    _caller: str = Depends(current_user_id),
-) -> dict[str, Any]:
-    """Serve the user's profile. The expensive path (taste-vector recompute +
-    Backboard narrative) runs at most once per PROFILE_REFRESH_TTL_SECONDS;
-    within that window the stored document is returned as-is. Pass ?refresh=true
-    to force a regeneration."""
-    stored = db.profiles.find_one({"user_id": user_id})
-    if stored and not refresh and _profile_is_fresh(stored):
-        return _profile_response(
-            user_id, stored, stored.get("arousal_peaks") or [], stored.get("narrative")
-        )
-
+def get_profile(user_id: str, _caller: str = Depends(current_user_id)) -> dict[str, Any]:
+    """Compute taste vector + trigger the Gemini narrative (aggregate across all
+    songs). Narrative goes through Backboard.io for persistent memory."""
     profile = rebuild_profile(user_id)
     peaks = _top_peaks(user_id)
     summary = {
         "taste_vector": profile.get("vector"),
         "top_tags": profile.get("tags"),
         "quadrant_counts": profile.get("quadrant_counts"),
-        "mean_arousal": profile.get("mean_arousal"),
-        "mean_valence": profile.get("mean_valence"),
         "n_moments": profile.get("n_moments"),
         "arousal_peaks": peaks,
     }
     narrative = backboard.generate_narrative(user_id, summary)
-    db.profiles.update_one(
-        {"user_id": user_id},
-        {"$set": {
-            "arousal_peaks": peaks,
-            "narrative": narrative,
-            "refreshed_at": datetime.now(timezone.utc),
-        }},
-        upsert=True,
-    )
-    return _profile_response(user_id, profile, peaks, narrative)
+    return {
+        "user_id": user_id,
+        **summary,
+        "narrative": narrative,
+        "updated_at": profile.get("updated_at"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -227,16 +181,9 @@ def _user_song_curve(user_id: str, song_id: str) -> dict[int, dict[str, Any]]:
     by_t: dict[int, dict[str, Any]] = {}
     for r in rows:
         t = int(r["t"])
-        p = by_t.setdefault(
-            t, {"arousal_sum": 0.0, "n": 0, "valence": None, "quadrant": None, "muse": None}
-        )
+        p = by_t.setdefault(t, {"arousal_sum": 0.0, "n": 0, "valence": None, "quadrant": None})
         p["arousal_sum"] += r.get("arousal") or 0.0
         p["n"] += 1
-        # Muse EEG rows carry a source-specific arousal (alpha/beta band power);
-        # surface it as its own series so the graph can show the EEG contribution
-        # distinctly from the fused arousal line.
-        if r.get("source") == "muse":
-            p["muse"] = r.get("arousal")
         # Valence comes from expression classification -> prefer presage rows.
         if r.get("source") == "presage" or p["valence"] is None:
             p["valence"] = r.get("valence")
@@ -262,7 +209,7 @@ def song_graph(
     brightness = feats.get("spectral_brightness_curve") or []
     onset = feats.get("onset_density_curve") or []
 
-    def at(curve: list[float], t: int) -> float | None:
+    def at(curve: list[float], t: int) -> Optional[float]:
         return curve[t] if t < len(curve) else None
 
     points = []
@@ -274,7 +221,6 @@ def song_graph(
                 "arousal": round(p["arousal_sum"] / p["n"], 4) if p else None,
                 "valence": p["valence"] if p else None,
                 "quadrant": p["quadrant"] if p else None,
-                "muse": p["muse"] if p and p.get("muse") is not None else None,
                 "energy": at(energy, t),
                 "brightness": at(brightness, t),
                 "onset_density": at(onset, t),
@@ -290,6 +236,7 @@ def song_graph(
             "key": feats.get("key"),
             "sections": song.get("sections") or [],
             "llm_tags": song.get("llm_tags"),
+            "features": feats,
         },
         "points": points,
     }
@@ -300,14 +247,14 @@ def song_graph(
 # ---------------------------------------------------------------------------
 
 class RecommendationOptions(BaseModel):
-    genres: list[str] | None = None  # hard filter over llm_tags (§6)
+    genres: Optional[list[str]] = None  # hard filter over llm_tags (§6)
     limit: int = 10
 
 
 @app.post("/recommendations/{user_id}")
 def recommendations(
     user_id: str,
-    options: RecommendationOptions | None = Body(default=None),
+    options: Optional[RecommendationOptions] = Body(default=None),
     _caller: str = Depends(current_user_id),
 ) -> dict[str, Any]:
     opts = options or RecommendationOptions()
@@ -332,7 +279,7 @@ def ml_status(user_id: str, _caller: str = Depends(current_user_id)) -> dict[str
 class PlaylistExportRequest(BaseModel):
     name: str = "Museic picks"
     description: str = "Songs your body liked. Generated by Museic."
-    song_ids: list[str] | None = None  # default: current top recommendations
+    song_ids: Optional[list[str]] = None  # default: current top recommendations
 
 
 @app.post("/playlist/export")
@@ -447,6 +394,7 @@ def list_songs(_caller: str = Depends(current_user_id)) -> list[dict[str, Any]]:
                 "key": (s.get("features") or {}).get("key"),
                 "llm_tags": s.get("llm_tags"),
                 "spotify_uri": s.get("spotify_uri"),
+                "album_art_b64": s.get("album_art_b64"),
             }
         )
     return out
