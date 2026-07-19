@@ -5,10 +5,12 @@ import Feed from "./components/Feed";
 import MetricsView from "./components/MetricsView";
 import MuseControl from "./components/MuseControl";
 import ProfileView from "./components/ProfileView";
+import SongGraph from "./components/SongGraph";
 import type { Session } from "./types";
 
 type View =
   | { name: "feed" }
+  | { name: "graph"; songId: string }
   | { name: "profile" }
   | { name: "compare" }
   | { name: "signals" };
@@ -121,9 +123,16 @@ export default function App() {
         </div>
       </header>
       <main>
-        <div hidden={view.name !== "feed"}>
-          <Feed userId={session.user?.sub ?? ""} active={view.name === "feed"} />
-        </div>
+        {view.name === "feed" && (
+          <Feed onOpenGraph={(songId) => setView({ name: "graph", songId })} />
+        )}
+        {view.name === "graph" && (
+          <SongGraph
+            songId={view.songId}
+            userId={session.user?.sub ?? ""}
+            onBack={() => setView({ name: "feed" })}
+          />
+        )}
         {view.name === "profile" && <ProfileView userId={session.user?.sub ?? ""} />}
         {view.name === "compare" && <CompareView selfId={session.user?.sub ?? ""} />}
         {view.name === "signals" && <MetricsView />}

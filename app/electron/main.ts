@@ -14,7 +14,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { BrowserWindow, app, ipcMain } from "electron";
+import { BrowserWindow, Menu, app, ipcMain } from "electron";
 import * as dotenv from "dotenv";
 
 // Load repo-root .env (app/ is one level below the repo root in dev).
@@ -103,6 +103,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Remove the default File/Edit/View menu bar (Windows/Linux). On macOS the
+  // system menu bar is always present, but this drops the app's stock menu.
+  Menu.setApplicationMenu(null);
   createWindow();
   if (pendingOpenUrl) {
     void handleAuthCallback(pendingOpenUrl);
