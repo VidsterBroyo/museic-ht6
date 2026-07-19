@@ -61,6 +61,8 @@ export interface GraphPoint {
   arousal: number | null;
   valence: number | null;
   quadrant: string | null;
+  /** Live fused enjoyment 0..1 (Feed graph hero). Null on old backend points. */
+  enjoyment: number | null;
   muse: number | null;
   energy: number | null;
   brightness: number | null;

@@ -133,7 +133,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 input[type="text"] {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -141,7 +141,7 @@ input[type="text"] {
   padding: 8px 12px;
   border-radius: var(--radius);
 }
-input::placeholder {
+input:not([type="checkbox"]):not([type="radio"])::placeholder {
   color: var(--text-muted);
 }
 
@@ -419,6 +419,24 @@ input::placeholder {
   margin-top: 32px;
   opacity: 0.7;
 }
+.copy-id-wrap { position: relative; display: inline-flex; vertical-align: middle; }
+.copy-id-btn {
+  margin-left: 6px; padding: 2px 8px; font-size: 0.75rem; line-height: 1.3;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel); color: var(--muted); cursor: pointer;
+}
+.copy-id-btn:hover { color: var(--text); border-color: var(--muted); }
+.copy-id-tip {
+  position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%);
+  padding: 3px 8px; font-size: 0.7rem; white-space: nowrap;
+  color: var(--text); background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); pointer-events: none;
+  animation: copy-tip-in 0.15s ease-out;
+}
+@keyframes copy-tip-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
 .quadrants {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -482,6 +500,15 @@ input::placeholder {
   font-weight: 700;
   color: var(--accent);
   text-shadow: none;
+}
+.song-graph-hint {
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 0 0; line-height: 1.3;
+}
+.song-graph-band-swatch {
+  flex: 0 0 auto; width: 14px; height: 10px; border-radius: 2px;
+  background: rgba(232, 168, 74, 0.35);
+  border: 1px solid rgba(232, 168, 74, 0.7);
 }
 .chart-box {
   background: var(--bg-card);

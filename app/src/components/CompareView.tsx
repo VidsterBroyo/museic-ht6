@@ -13,6 +13,33 @@ import { api } from "../api";
 import type { CompareResponse } from "../types";
 import { StyleInjector } from "./StyleInjector";
 
+function CopyIdButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  return (
+    <span className="copy-id-wrap">
+      <button type="button" className="copy-id-btn" onClick={() => void copy()} aria-label="Copy user id">
+        Copy
+      </button>
+      {copied && (
+        <span className="copy-id-tip" role="status">
+          Copied!
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Two-person live compatibility demo (RFC §6 compare). Both people react to
  * the same songs (side-by-side on one laptop, logged in as different Auth0
  * users), then this joins their curves on shared songs. */
@@ -44,7 +71,7 @@ export default function CompareView({ selfId }: { selfId: string }) {
       <StyleInjector />
       <h1>Compare with friends</h1>
       <p className="muted small">
-        You are <code>{selfId}</code>. Paste in your friend's user id.
+        You are <code>{selfId}</code> <CopyIdButton text={selfId} />. Paste in your friend's user id.
       </p>
       <div className="row">
         <input

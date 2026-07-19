@@ -150,17 +150,17 @@ button.primary:hover { background: var(--accent-hover); border-color: var(--acce
 button.big { padding: 12px 22px; font-size: 1rem; }
 button:disabled { opacity: 0.5; cursor: default; }
 
-input {
+input:not([type="checkbox"]):not([type="radio"]) {
   background: #ffffff; border: 1px solid var(--border); color: #121218;
   border-radius: var(--radius); padding: 8px 12px; min-width: 320px; font-size: 0.9rem;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  input {
+  input:not([type="checkbox"]):not([type="radio"]) {
     background: var(--panel); border-color: var(--border); color: var(--text);
     color-scheme: dark;
   }
-  input::placeholder { color: var(--muted); }
+  input:not([type="checkbox"]):not([type="radio"])::placeholder { color: var(--muted); }
 }
 
 .pad { padding: 22px 28px; max-width: 980px; margin: 0 auto; }
@@ -176,13 +176,17 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .banner.warn { background: var(--warn-bg); color: var(--warn-text); }
 .banner.live { background: rgba(255, 93, 143, 0.22); color: var(--text); }
 .banner.err { background: var(--err-bg); color: var(--err-text); }
-/* Subtle, non-alarming capture-quality hint (Presage validation). */
-.banner.note { background: rgba(255, 255, 255, 0.65); color: var(--muted); border-bottom: 1px solid var(--border); }
-.banner.error { background: var(--err-bg); color: var(--err-text); }
-
-@media (prefers-color-scheme: dark) {
-  .banner.note { background: rgba(255, 255, 255, 0.06); }
+/* Subtle capture-quality hint (Presage) — not an error. */
+.banner.note {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, var(--muted));
+  border-radius: var(--radius);
+  margin: 0 0 14px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
 }
+.banner.error { background: var(--err-bg); color: var(--err-text); }
 .banner-dismiss {
   position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
   background: none; border: none; color: inherit; cursor: pointer;
@@ -220,6 +224,15 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 
 /* Charts / profile */
 .chart-box { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin: 16px 0; }
+.song-graph-hint {
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 0 0; line-height: 1.3;
+}
+.song-graph-band-swatch {
+  flex: 0 0 auto; width: 14px; height: 10px; border-radius: 2px;
+  background: rgba(232, 168, 74, 0.35);
+  border: 1px solid rgba(232, 168, 74, 0.7);
+}
 .narrative {
   margin: 16px 0; padding: 10px 16px;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
@@ -227,6 +240,24 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 }
 .narrative strong { font-weight: 700; color: var(--text); }
 .profile-userid { margin-top: 32px; opacity: 0.7; }
+.copy-id-wrap { position: relative; display: inline-flex; vertical-align: middle; }
+.copy-id-btn {
+  margin-left: 6px; padding: 2px 8px; font-size: 0.75rem; line-height: 1.3;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel); color: var(--muted); cursor: pointer;
+}
+.copy-id-btn:hover { color: var(--text); border-color: var(--muted); }
+.copy-id-tip {
+  position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%);
+  padding: 3px 8px; font-size: 0.7rem; white-space: nowrap;
+  color: var(--text); background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); pointer-events: none;
+  animation: copy-tip-in 0.15s ease-out;
+}
+@keyframes copy-tip-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
 .peaks {
   list-style: none; margin: 0; padding: 0;
   display: flex; flex-direction: column; gap: 14px;
@@ -356,8 +387,19 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .muse-pill.muse-starting .muse-state { color: #f0d08a; }
 .muse-pill.muse-error .muse-state { color: var(--accent); }
 .muse-pill.muse-error .muse-toggle { border-color: var(--accent); color: var(--accent); }
-.muse-sim { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); cursor: pointer; }
-.muse-sim input { accent-color: var(--accent); }
+.muse-sim {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--text); cursor: pointer; font-size: 0.9rem;
+  user-select: none; line-height: 1.2;
+}
+.muse-sim input[type="checkbox"] {
+  width: 15px; height: 15px; margin: 0; flex-shrink: 0;
+  accent-color: var(--accent); cursor: pointer;
+}
+.muse-sim:has(input:disabled) {
+  color: var(--muted); opacity: 0.55; cursor: not-allowed;
+}
+.muse-sim:has(input:disabled) input { cursor: not-allowed; }
 .prelogin-muse { margin-top: 26px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 
 /* Dismissible error toast (bottom-right) */
@@ -477,14 +519,25 @@ code { background: rgba(255, 93, 143, 0.14); padding: 1px 6px; border-radius: va
 .enjoy-part b { color: var(--text); font-weight: 600; margin-left: 2px; }
 
 /* Live webcam preview while the camera is on */
-.camera-feed { position: relative; width: 320px; margin: 0 auto 18px; }
+.camera-feed {
+  position: relative; width: 100%; max-width: 420px;
+  margin: 0 auto 18px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, var(--muted));
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
 .camera-video {
-  width: 320px; height: 240px; object-fit: cover; border-radius: var(--radius);
-  border: 1px solid var(--border); background: #000; transform: scaleX(-1); /* mirror */
+  display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  background: #000; transform: scaleX(-1); /* mirror */
+  border: none;
 }
 .camera-feed-tag {
-  position: absolute; left: 10px; bottom: 10px; color: #fff;
-  background: rgba(0, 0, 0, 0.55); padding: 2px 8px; border-radius: var(--radius);
+  position: absolute; left: 12px; bottom: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.72rem; font-style: italic; letter-spacing: 0.02em;
+  background: none; padding: 0; border: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
 }
 
 .metrics-group-title {
