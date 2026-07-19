@@ -478,7 +478,11 @@ def song_audio(song_id: str, _caller: str = Depends(user_id_header_or_query)) ->
     """Stream the local audio file for feed playback. Accepts `?token=` because
     <audio> elements cannot set an Authorization header."""
     song = db.songs.find_one({"_id": song_id}, {"audio_path": 1})
-    path = Path(song["audio_path"]) if song and song.get("audio_path") else None
+    raw_path = song.get("audio_path") if song else None
+    path = None
+    if raw_path:
+        candidate = Path(raw_path)
+        path = candidate if candidate.is_absolute() else (config.AUDIO_DIR / candidate)
 
     # MongoDB is shared across teammates and may contain absolute paths from a
     # different laptop. If the stored path is stale, resolve local_NNN against
