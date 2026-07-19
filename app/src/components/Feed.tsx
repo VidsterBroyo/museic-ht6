@@ -60,7 +60,6 @@ export default function Feed({ userId, active = true }: { userId: string; active
   const [lastReading, setLastReading] = useState<SensorReading | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [graphData, setGraphData] = useState<SongGraphResponse | null>(null);
-  const [currentSongIndex, setCurrentSongIndex] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bufferRef = useRef<BufferedReading[]>([]);
